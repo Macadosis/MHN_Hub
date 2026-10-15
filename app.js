@@ -5437,6 +5437,13 @@ function showTasksPipelineTooltip(bar, deal, task) {
   dealVal.textContent = company;
   dealRow.appendChild(dealVal);
 
+  const toolRow = document.createElement("div");
+  toolRow.className = "tasks-pipeline-tooltip-row";
+  toolRow.innerHTML = `<span class="tasks-pipeline-tooltip-label">Tool</span>`;
+  const toolVal = document.createElement("span");
+  toolVal.textContent = (deal.tool || "").trim() || "—";
+  toolRow.appendChild(toolVal);
+
   const ownerRow = document.createElement("div");
   ownerRow.className = "tasks-pipeline-tooltip-row";
   ownerRow.innerHTML = `<span class="tasks-pipeline-tooltip-label">Owner</span>`;
@@ -5451,7 +5458,7 @@ function showTasksPipelineTooltip(bar, deal, task) {
   dueVal.textContent = formatTaskDueDate(task.dueAt);
   dueRow.appendChild(dueVal);
 
-  tip.append(title, dealRow, ownerRow, dueRow);
+  tip.append(title, dealRow, toolRow, ownerRow, dueRow);
   const typeLabel = taskTypeLabel(task.type);
   if (typeLabel) {
     const typeRow = document.createElement("div");
