@@ -49,7 +49,6 @@ const tasksCalendarState = {
 };
 const tasksPipelineState = {
   periodMonths: 1,
-  anchorDate: null, // window is anchored on this day (defaults to today)
 };
 const TASKS_PIPELINE_LOOKBACK_DAYS = 7;
 const TASKS_PIPELINE_LABEL_MAX = 20;
@@ -57,6 +56,11 @@ const TASKS_PIPELINE_LABEL_MAX = 20;
 const TASKS_PIPELINE_MIN_MONTH_LABEL_DAYS = 10;
 /** Keep Today on the left: a short lookback so last month peeks in, future fills the rest. */
 const PIPELINE_LOOKBACK_DAYS = 14;
+/** Extra months you can pan through past Today / into the future. */
+const PIPELINE_SCROLL_PAST_MONTHS = 6;
+const PIPELINE_SCROLL_FUTURE_MONTHS = 18;
+const PIPELINE_SCROLL_MAX_PAST_MONTHS = 24;
+const PIPELINE_SCROLL_MAX_FUTURE_MONTHS = 36;
 /** Skip month names/revenue when only a leftover sliver is on-screen. */
 const PIPELINE_MIN_MONTH_LABEL_DAYS = 10;
 /** Same-company tasks farther apart than this start a new packed cluster. */
@@ -74,7 +78,6 @@ const SVG_NS = "http://www.w3.org/2000/svg";
 
 const pipelineState = {
   periodMonths: 1,
-  anchorDate: null, // window is anchored on this day (defaults to today)
 };
 
 const filters = {
@@ -91,8 +94,9 @@ const filtersEl = document.getElementById("filters");
 const clearFiltersBtn = document.getElementById("clearFiltersBtn");
 const pipelineFiltersEl = document.getElementById("pipelineFilters");
 const pipelineClearFiltersBtn = document.getElementById("pipelineClearFiltersBtn");
-const pipelinePeriodLabel = document.getElementById("pipelinePeriodLabel");
 const pipelinePeriodLength = document.getElementById("pipelinePeriodLength");
+const pipelineChartEl = document.getElementById("pipelineChart");
+const pipelineScrollEl = document.getElementById("pipelineScroll");
 const pipelineAxisEl = document.getElementById("pipelineAxis");
 const pipelineRowsEl = document.getElementById("pipelineRows");
 const overlay = document.getElementById("modalOverlay");
@@ -159,8 +163,8 @@ const searchSuggestionState = new Map();
 const tasksListLayout = document.getElementById("tasksListLayout");
 const tasksPipelineLayout = document.getElementById("tasksPipelineLayout");
 const tasksPipelinePeriod = document.getElementById("tasksPipelinePeriod");
-const tasksPipelinePeriodLabel = document.getElementById("tasksPipelinePeriodLabel");
 const tasksPipelinePeriodLength = document.getElementById("tasksPipelinePeriodLength");
+const tasksPipelineScrollEl = document.getElementById("tasksPipelineScroll");
 const tasksPipelineAxisEl = document.getElementById("tasksPipelineAxis");
 const tasksPipelineRowsEl = document.getElementById("tasksPipelineRows");
 const modalEl = overlay.querySelector(".modal");
@@ -1125,7 +1129,7 @@ function moveDealToStage(deal, targetStage, insertBeforeId, now = Date.now()) {
 }
 
 function initPipelinePeriod() {
-  pipelineState.anchorDate = startOfDay(new Date());
+  pipelineViewportStartMs = null;
 }
 
 function startOfDay(date) {
@@ -1189,12 +1193,11 @@ function startOfMonth(date) {
 if (!tasksCalendarState.monthStart) {
   tasksCalendarState.monthStart = startOfMonth(new Date());
 }
-if (!tasksPipelineState.anchorDate) {
-  tasksPipelineState.anchorDate = startOfDay(new Date());
-}
-if (!pipelineState.anchorDate) {
-  pipelineState.anchorDate = startOfDay(new Date());
-}
+let pipelineViewportStartMs = null;
+let pipelineSyncingScroll = false;
+let tasksViewportStartMs = null;
+let tasksPipelineSyncingScroll = false;
+let tasksPipelineRange = null;
 
 function addMonths(date, count) {
   return new Date(date.getFullYear(), date.getMonth() + count, 1);
@@ -2270,8 +2273,18 @@ function syncColumnBodyScrolling() {
   });
 }
 
+let pipelineResizeTimer = null;
 window.addEventListener("resize", () => {
   if (activeTab === "board") syncColumnBodyScrolling();
+  if (activeTab === "pipeline") {
+    clearTimeout(pipelineResizeTimer);
+    pipelineResizeTimer = setTimeout(() => renderPipeline(), 120);
+    return;
+  }
+  if (activeTab === "tasks" && tasksViewMode === "pipeline") {
+    clearTimeout(pipelineResizeTimer);
+    pipelineResizeTimer = setTimeout(() => renderTasksView(), 120);
+  }
 });
 
 /* ------------------------------ Touch overscroll guard (iOS) ---- */
@@ -2334,20 +2347,72 @@ function getPipelineDeals() {
   );
 }
 
-function getPipelineAnchor() {
-  return startOfDay(pipelineState.anchorDate || new Date());
+function getPipelineVisibleSpan() {
+  const today = startOfDay(new Date());
+  return Math.max(
+    shiftDateByMonths(today, pipelineState.periodMonths).getTime() -
+      addDays(today, -PIPELINE_LOOKBACK_DAYS).getTime(),
+    MS_DAY
+  );
 }
 
 function getPipelinePeriodRange() {
-  const anchor = getPipelineAnchor();
-  const start = addDays(anchor, -PIPELINE_LOOKBACK_DAYS).getTime();
-  const end = shiftDateByMonths(anchor, pipelineState.periodMonths).getTime();
+  const today = startOfDay(new Date());
+  const minStart = startOfMonth(addMonths(today, -PIPELINE_SCROLL_MAX_PAST_MONTHS)).getTime();
+  const maxEnd = addMonths(startOfMonth(today), PIPELINE_SCROLL_MAX_FUTURE_MONTHS).getTime();
+  let start = startOfMonth(addMonths(today, -PIPELINE_SCROLL_PAST_MONTHS)).getTime();
+  let end = addMonths(startOfMonth(today), PIPELINE_SCROLL_FUTURE_MONTHS).getTime();
+
+  for (const deal of getPipelineDeals()) {
+    const dealStart = getImplementationStart(deal);
+    const dealEnd = getImplementationEnd(deal);
+    if (Number.isFinite(dealStart)) start = Math.min(start, startOfMonth(new Date(dealStart)).getTime());
+    if (Number.isFinite(dealEnd)) end = Math.max(end, addMonths(startOfMonth(new Date(dealEnd)), 1).getTime());
+  }
+
+  start = Math.max(start, minStart);
+  end = Math.min(Math.max(end, start + MS_DAY), maxEnd);
   return {
     start,
     end,
     span: Math.max(end - start, MS_DAY),
-    anchor: anchor.getTime(),
   };
+}
+
+function getPipelineViewportPx() {
+  if (!pipelineChartEl) return 720;
+  const styles = getComputedStyle(pipelineChartEl);
+  const pad = (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
+  return Math.max(pipelineChartEl.clientWidth - pad, 320);
+}
+
+function layoutPipelineTimeline(periodStart, span) {
+  if (!pipelineChartEl || !pipelineScrollEl) return;
+  const viewportPx = getPipelineViewportPx();
+  const contentWidth = Math.max(viewportPx, (span / getPipelineVisibleSpan()) * viewportPx);
+  pipelineScrollEl.style.width = `${contentWidth}px`;
+
+  const empty = pipelineRowsEl.querySelector(".pipeline-empty");
+  if (empty) empty.style.width = `${viewportPx}px`;
+
+  const today = startOfDay(new Date()).getTime();
+  const startMs =
+    pipelineViewportStartMs == null
+      ? today - PIPELINE_LOOKBACK_DAYS * MS_DAY
+      : pipelineViewportStartMs;
+  pipelineSyncingScroll = true;
+  pipelineChartEl.scrollLeft = Math.max(0, ((startMs - periodStart) / span) * contentWidth);
+  requestAnimationFrame(() => {
+    pipelineSyncingScroll = false;
+  });
+}
+
+function rememberPipelineScroll() {
+  if (pipelineSyncingScroll || !pipelineChartEl || !pipelineScrollEl) return;
+  const contentWidth = pipelineScrollEl.offsetWidth;
+  if (!contentWidth) return;
+  const { start, span } = getPipelinePeriodRange();
+  pipelineViewportStartMs = start + (pipelineChartEl.scrollLeft / contentWidth) * span;
 }
 
 function assignPipelineRows(deals) {
@@ -2522,8 +2587,7 @@ function renderPipeline() {
   const { start: periodStart, end: periodEnd, span } = getPipelinePeriodRange();
   const deals = getPipelineDeals();
 
-  pipelinePeriodLabel.textContent = `${formatMonthDay(new Date(periodStart))} – ${formatMonthDay(new Date(periodEnd - MS_DAY))}`;
-  pipelinePeriodLength.value = String(pipelineState.periodMonths);
+  if (pipelinePeriodLength) pipelinePeriodLength.value = String(pipelineState.periodMonths);
 
   pipelineAxisEl.innerHTML = "";
   const months = getOverlappingMonthStarts(periodStart, periodEnd);
@@ -2611,9 +2675,11 @@ function renderPipeline() {
     const empty = document.createElement("div");
     empty.className = "pipeline-empty";
     empty.textContent = hasActiveFilters()
-      ? "No matching committed deals in this period"
+      ? "No matching committed deals on the timeline"
       : "No committed deals yet — drag a deal to Committed on the Deals tab";
     pipelineRowsEl.appendChild(empty);
+    layoutPipelineTimeline(periodStart, span);
+    requestAnimationFrame(() => fitPipelineBarLabels());
     return;
   }
 
@@ -2691,6 +2757,7 @@ function renderPipeline() {
     pipelineRowsEl.appendChild(bar);
   }
 
+  layoutPipelineTimeline(periodStart, span);
   requestAnimationFrame(() => fitPipelineBarLabels());
 }
 
@@ -2703,11 +2770,6 @@ function fitPipelineBarLabels() {
     const minForDuration = duration.scrollWidth + 36;
     if (bar.clientWidth < minForDuration) duration.hidden = true;
   });
-}
-
-function shiftPipelinePeriod(direction) {
-  pipelineState.anchorDate = shiftDateByMonths(getPipelineAnchor(), direction);
-  render();
 }
 
 function renderColumn(stage, visibleDeals) {
@@ -4853,20 +4915,73 @@ function renderTasksView() {
   }
 }
 
-function getTasksPipelineAnchor() {
-  return startOfDay(tasksPipelineState.anchorDate || new Date());
+function getTasksPipelineVisibleSpan() {
+  const today = startOfDay(new Date());
+  return Math.max(
+    shiftDateByMonths(today, tasksPipelineState.periodMonths).getTime() -
+      addDays(today, -TASKS_PIPELINE_LOOKBACK_DAYS).getTime(),
+    MS_DAY
+  );
 }
 
-function getTasksPipelinePeriodRange() {
-  const anchor = getTasksPipelineAnchor();
-  const start = addDays(anchor, -TASKS_PIPELINE_LOOKBACK_DAYS).getTime();
-  const end = shiftDateByMonths(anchor, tasksPipelineState.periodMonths).getTime();
+function getTasksPipelinePeriodRange(entries) {
+  const today = startOfDay(new Date());
+  const minStart = startOfMonth(addMonths(today, -PIPELINE_SCROLL_MAX_PAST_MONTHS)).getTime();
+  const maxEnd = addMonths(startOfMonth(today), PIPELINE_SCROLL_MAX_FUTURE_MONTHS).getTime();
+  let start = startOfMonth(addMonths(today, -PIPELINE_SCROLL_PAST_MONTHS)).getTime();
+  let end = addMonths(startOfMonth(today), PIPELINE_SCROLL_FUTURE_MONTHS).getTime();
+
+  for (const { task } of entries || []) {
+    const due = task.dueAt;
+    if (!Number.isFinite(due)) continue;
+    start = Math.min(start, startOfMonth(new Date(due)).getTime());
+    end = Math.max(end, addMonths(startOfMonth(new Date(due)), 1).getTime());
+  }
+
+  start = Math.max(start, minStart);
+  end = Math.min(Math.max(end, start + MS_DAY), maxEnd);
   return {
     start,
     end,
     span: Math.max(end - start, MS_DAY),
-    anchor: anchor.getTime(),
   };
+}
+
+function getTasksPipelineViewportPx() {
+  if (!tasksPipelineLayout) return 720;
+  const styles = getComputedStyle(tasksPipelineLayout);
+  const pad = (parseFloat(styles.paddingLeft) || 0) + (parseFloat(styles.paddingRight) || 0);
+  return Math.max(tasksPipelineLayout.clientWidth - pad, 320);
+}
+
+function layoutTasksPipelineTimeline(periodStart, span, contentWidth, viewportPx) {
+  if (!tasksPipelineLayout || !tasksPipelineScrollEl) return;
+  const width = contentWidth || tasksPipelineScrollEl.offsetWidth;
+  if (width) tasksPipelineScrollEl.style.width = `${width}px`;
+
+  const empty = tasksPipelineRowsEl.querySelector(".tasks-pipeline-empty");
+  if (empty) empty.style.width = `${viewportPx || getTasksPipelineViewportPx()}px`;
+
+  const today = startOfDay(new Date()).getTime();
+  const startMs =
+    tasksViewportStartMs == null
+      ? today - TASKS_PIPELINE_LOOKBACK_DAYS * MS_DAY
+      : tasksViewportStartMs;
+  const usedWidth = tasksPipelineScrollEl.offsetWidth || width;
+  if (!usedWidth || !span) return;
+  tasksPipelineSyncingScroll = true;
+  tasksPipelineLayout.scrollLeft = Math.max(0, ((startMs - periodStart) / span) * usedWidth);
+  requestAnimationFrame(() => {
+    tasksPipelineSyncingScroll = false;
+  });
+}
+
+function rememberTasksPipelineScroll() {
+  if (tasksPipelineSyncingScroll || !tasksPipelineLayout || !tasksPipelineScrollEl) return;
+  const contentWidth = tasksPipelineScrollEl.offsetWidth;
+  if (!contentWidth || !tasksPipelineRange) return;
+  const { start, span } = tasksPipelineRange;
+  tasksViewportStartMs = start + (tasksPipelineLayout.scrollLeft / contentWidth) * span;
 }
 
 function getOverlappingMonthStarts(rangeStartMs, rangeEndMs) {
@@ -5281,22 +5396,13 @@ function getMonthTaskCount(entries, monthStart, monthEnd) {
   }, 0);
 }
 
-function shiftTasksPipelinePeriod(directionMonths) {
-  tasksPipelineState.anchorDate = shiftDateByMonths(
-    getTasksPipelineAnchor(),
-    directionMonths
-  );
-  if (activeTab === "tasks") renderTasksView();
-  else render();
-}
-
 function setTasksViewMode(mode) {
   if (mode !== "list" && mode !== "pipeline") return;
   hideTasksPipelineTooltip();
   tasksViewMode = mode;
   if (mode === "pipeline") {
     // Opening pipeline always recenters on today so the lookback + forward span is clear.
-    tasksPipelineState.anchorDate = startOfDay(new Date());
+    tasksViewportStartMs = null;
   }
   if (activeTab === "tasks") renderTasksView();
 }
@@ -5384,10 +5490,16 @@ function showTasksPipelineTooltip(bar, deal, task) {
 function renderTasksPipeline(entries) {
   hideTasksPipelineTooltip();
 
-  const { start: periodStart, end: periodEnd, span } = getTasksPipelinePeriodRange();
+  const { start: periodStart, end: periodEnd, span } = getTasksPipelinePeriodRange(entries);
+  tasksPipelineRange = { start: periodStart, end: periodEnd, span };
 
-  tasksPipelinePeriodLabel.textContent = `${formatMonthDay(new Date(periodStart))} – ${formatMonthDay(new Date(periodEnd - MS_DAY))}`;
-  tasksPipelinePeriodLength.value = String(tasksPipelineState.periodMonths);
+  if (tasksPipelinePeriodLength) {
+    tasksPipelinePeriodLength.value = String(tasksPipelineState.periodMonths);
+  }
+
+  const viewportPx = getTasksPipelineViewportPx();
+  const contentWidth = Math.max(viewportPx, (span / getTasksPipelineVisibleSpan()) * viewportPx);
+  if (tasksPipelineScrollEl) tasksPipelineScrollEl.style.width = `${contentWidth}px`;
 
   const visibleEntries = entries.filter((entry) => {
     const due = entry.task.dueAt;
@@ -5471,12 +5583,8 @@ function renderTasksPipeline(entries) {
     span,
     "is-grid"
   );
-  const rowWidthPx = Math.max(
-    tasksPipelineLayout?.clientWidth || tasksPipelineRowsEl.clientWidth || 720,
-    720
-  );
   const rowCount = Math.max(
-    assignTaskPipelineRows(visibleEntries, span, rowWidthPx),
+    assignTaskPipelineRows(visibleEntries, span, contentWidth),
     1
   );
   tasksPipelineRowsEl.style.height = `${Math.max(rowCount, 2) * TASKS_PIPELINE_ROW_HEIGHT}px`;
@@ -5511,13 +5619,14 @@ function renderTasksPipeline(entries) {
     empty.className = "tasks-pipeline-empty";
     const filtersActive = hasActiveFilters() || searchQuery || taskTypeFilters.size;
     empty.textContent = taskTypeFilters.size
-      ? "No matching tasks of the selected types in this period"
+      ? "No matching tasks of the selected types on the timeline"
       : filtersActive
-      ? "No matching tasks in this period"
+      ? "No matching tasks on the timeline"
       : showCompletedTasks
-        ? "No tasks in this period — add tasks from a deal’s Tasks tab"
-        : "No open tasks in this period";
+        ? "No tasks on the timeline — add tasks from a deal’s Tasks tab"
+        : "No open tasks on the timeline";
     tasksPipelineRowsEl.appendChild(empty);
+    layoutTasksPipelineTimeline(periodStart, span, contentWidth, viewportPx);
     return;
   }
 
@@ -5585,6 +5694,7 @@ function renderTasksPipeline(entries) {
     tasksPipelineRowsEl.appendChild(item);
   }
 
+  layoutTasksPipelineTimeline(periodStart, span, contentWidth, viewportPx);
   // Measure real bubble widths and push colliding tasks onto lower rows.
   requestAnimationFrame(() => relayoutTaskPipelineBars());
 }
@@ -6063,30 +6173,35 @@ document.querySelectorAll(".tasks-view-btn").forEach((btn) => {
   btn.addEventListener("click", () => setTasksViewMode(btn.dataset.tasksView));
 });
 
-const tasksPipelinePrevBtn = document.getElementById("tasksPipelinePrevBtn");
-const tasksPipelineNextBtn = document.getElementById("tasksPipelineNextBtn");
-if (tasksPipelinePrevBtn) {
-  tasksPipelinePrevBtn.addEventListener("click", () => {
-    shiftTasksPipelinePeriod(-tasksPipelineState.periodMonths);
-  });
-}
-if (tasksPipelineNextBtn) {
-  tasksPipelineNextBtn.addEventListener("click", () => {
-    shiftTasksPipelinePeriod(tasksPipelineState.periodMonths);
-  });
-}
 if (tasksPipelinePeriodLength) {
   tasksPipelinePeriodLength.addEventListener("change", () => {
     tasksPipelineState.periodMonths = Number(tasksPipelinePeriodLength.value) || 1;
-    tasksPipelineState.anchorDate = startOfDay(new Date());
+    tasksViewportStartMs = null;
     if (activeTab === "tasks") renderTasksView();
   });
 }
 if (tasksPipelineLayout) {
   tasksPipelineLayout.addEventListener(
     "scroll",
-    () => hideTasksPipelineTooltip(),
+    () => {
+      hideTasksPipelineTooltip();
+      rememberTasksPipelineScroll();
+    },
     { passive: true }
+  );
+  tasksPipelineLayout.addEventListener(
+    "wheel",
+    (e) => {
+      hideTasksPipelineTooltip();
+      const canScrollX = tasksPipelineLayout.scrollWidth > tasksPipelineLayout.clientWidth + 1;
+      const canScrollY = tasksPipelineLayout.scrollHeight > tasksPipelineLayout.clientHeight + 1;
+      if (!canScrollX) return;
+      if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      if (canScrollY && !e.shiftKey) return;
+      e.preventDefault();
+      tasksPipelineLayout.scrollLeft += e.deltaY;
+    },
+    { passive: false }
   );
 }
 
@@ -7034,8 +7149,11 @@ document.querySelectorAll(".tab").forEach((tab) => {
     closeAllSearchSuggestions();
     activeTab = tab.dataset.tab;
     if (activeTab === "pipeline") {
-      // Opening Production always recenters on today so last-month lookback + future span is clear.
-      pipelineState.anchorDate = startOfDay(new Date());
+      // Opening Production always recenters on today so the lookback + future span is clear.
+      pipelineViewportStartMs = null;
+    }
+    if (activeTab === "tasks" && tasksViewMode === "pipeline") {
+      tasksViewportStartMs = null;
     }
     document.querySelectorAll(".tab").forEach((t) => {
       t.classList.toggle("is-active", t === tab);
@@ -7098,17 +7216,37 @@ if (boardEl) {
   );
 }
 
-document.getElementById("pipelinePrevBtn").addEventListener("click", () => {
-  shiftPipelinePeriod(-pipelineState.periodMonths);
-});
-document.getElementById("pipelineNextBtn").addEventListener("click", () => {
-  shiftPipelinePeriod(pipelineState.periodMonths);
-});
-pipelinePeriodLength.addEventListener("change", () => {
-  pipelineState.periodMonths = Number(pipelinePeriodLength.value) || 1;
-  pipelineState.anchorDate = startOfDay(new Date());
-  render();
-});
+if (pipelineChartEl) {
+  pipelineChartEl.addEventListener(
+    "scroll",
+    () => {
+      hidePipelineTooltip();
+      rememberPipelineScroll();
+    },
+    { passive: true }
+  );
+  pipelineChartEl.addEventListener(
+    "wheel",
+    (e) => {
+      hidePipelineTooltip();
+      const canScrollX = pipelineChartEl.scrollWidth > pipelineChartEl.clientWidth + 1;
+      const canScrollY = pipelineChartEl.scrollHeight > pipelineChartEl.clientHeight + 1;
+      if (!canScrollX) return;
+      if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      if (canScrollY && !e.shiftKey) return;
+      e.preventDefault();
+      pipelineChartEl.scrollLeft += e.deltaY;
+    },
+    { passive: false }
+  );
+}
+if (pipelinePeriodLength) {
+  pipelinePeriodLength.addEventListener("change", () => {
+    pipelineState.periodMonths = Number(pipelinePeriodLength.value) || 1;
+    pipelineViewportStartMs = null;
+    render();
+  });
+}
 
 async function bootstrap() {
   const auth = window.MHN_AUTH;

@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=weekend-bands" />
+  <link rel="stylesheet" href="styles.css?v=tasks-scroll" />
 </head>
 <body class="is-logged-out">
 
@@ -240,10 +240,7 @@
           <button class="btn btn-ghost btn-sm" id="pipelineClearFiltersBtn" hidden>Clear filters</button>
         </div>
         <div class="pipeline-period">
-          <button type="button" class="period-nav" id="pipelinePrevBtn" aria-label="Previous period">‹</button>
-          <span class="period-label" id="pipelinePeriodLabel"></span>
-          <button type="button" class="period-nav" id="pipelineNextBtn" aria-label="Next period">›</button>
-          <select class="period-select" id="pipelinePeriodLength" aria-label="Period length">
+          <select class="period-select" id="pipelinePeriodLength" aria-label="Visible range">
             <option value="1" selected>1 month</option>
             <option value="3">3 months</option>
             <option value="6">6 months</option>
@@ -252,9 +249,11 @@
         </div>
       </div>
       <div class="pipeline-chart" id="pipelineChart">
-        <div class="pipeline-axis" id="pipelineAxis"></div>
-        <div class="pipeline-body" id="pipelineBody">
-          <div class="pipeline-rows" id="pipelineRows"></div>
+        <div class="pipeline-scroll" id="pipelineScroll">
+          <div class="pipeline-axis" id="pipelineAxis"></div>
+          <div class="pipeline-body" id="pipelineBody">
+            <div class="pipeline-rows" id="pipelineRows"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -348,10 +347,7 @@
             </button>
           </div>
           <div class="tasks-pipeline-period" id="tasksPipelinePeriod" hidden>
-            <button type="button" class="period-nav" id="tasksPipelinePrevBtn" aria-label="Previous period">‹</button>
-            <span class="period-label" id="tasksPipelinePeriodLabel"></span>
-            <button type="button" class="period-nav" id="tasksPipelineNextBtn" aria-label="Next period">›</button>
-            <select class="period-select" id="tasksPipelinePeriodLength" aria-label="Period length">
+            <select class="period-select" id="tasksPipelinePeriodLength" aria-label="Visible range">
               <option value="1" selected>1 month</option>
               <option value="3">3 months</option>
               <option value="6">6 months</option>
@@ -373,9 +369,11 @@
       </div>
 
       <div class="tasks-pipeline-chart" id="tasksPipelineLayout" hidden>
-        <div class="tasks-pipeline-axis" id="tasksPipelineAxis"></div>
-        <div class="tasks-pipeline-body">
-          <div class="tasks-pipeline-rows" id="tasksPipelineRows"></div>
+        <div class="tasks-pipeline-scroll" id="tasksPipelineScroll">
+          <div class="tasks-pipeline-axis" id="tasksPipelineAxis"></div>
+          <div class="tasks-pipeline-body">
+            <div class="tasks-pipeline-rows" id="tasksPipelineRows"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -860,6 +858,6 @@
   <script src="config.js"></script>
   <script src="db.js"></script>
   <script src="auth.js"></script>
-  <script src="app.js?v=email-first"></script>
+  <script src="app.js?v=tasks-scroll"></script>
 </body>
 </html>

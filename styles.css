@@ -1517,14 +1517,28 @@ body.is-card-dragging .card {
   overflow: auto;
   position: relative;
   z-index: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
+}
+
+.pipeline-scroll {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 100%;
+  box-sizing: border-box;
 }
 
 .pipeline-axis {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 5;
   height: 36px;
   border-bottom: 1px solid var(--line);
   margin-bottom: 8px;
-  min-width: 720px;
+  width: 100%;
+  background: var(--bg);
 }
 
 .pipeline-tick {
@@ -1661,7 +1675,7 @@ body.is-card-dragging .card {
 
 .pipeline-rows {
   position: relative;
-  min-width: 720px;
+  width: 100%;
   background: var(--surface);
   border: 1px solid var(--line);
   border-radius: var(--radius-lg);
@@ -1780,12 +1794,15 @@ body.is-card-dragging .card {
 }
 
 .pipeline-empty {
-  position: absolute;
-  inset: 0;
+  position: sticky;
+  left: 0;
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 200px;
   padding: 24px;
+  box-sizing: border-box;
   text-align: center;
   font-size: 13px;
   color: var(--ink-faint);
@@ -2467,6 +2484,9 @@ body.is-card-dragging .card {
   overflow: auto;
   position: relative;
   z-index: 0;
+  -webkit-overflow-scrolling: touch;
+  overscroll-behavior: contain;
+  touch-action: pan-x pan-y;
   background:
     linear-gradient(180deg, rgba(228, 237, 244, 0.55) 0%, transparent 120px),
     var(--bg);
@@ -2476,28 +2496,41 @@ body.is-card-dragging .card {
   display: none;
 }
 
+.tasks-pipeline-scroll {
+  display: flex;
+  flex-direction: column;
+  flex: 0 0 auto;
+  min-height: 100%;
+  box-sizing: border-box;
+}
+
 .tasks-pipeline-axis {
-  position: relative;
+  position: sticky;
+  top: 0;
+  z-index: 5;
   display: flex;
   flex-direction: column;
   gap: 2px;
   height: auto;
+  width: 100%;
   border-bottom: 2px solid var(--tasks-pipe);
   margin-bottom: 10px;
-  min-width: 720px;
   padding-bottom: 2px;
+  background:
+    linear-gradient(180deg, rgba(228, 237, 244, 0.55), rgba(228, 237, 244, 0.55)),
+    var(--bg);
 }
 
 .tasks-pipeline-axis-months {
   position: relative;
   height: 28px;
-  min-width: 720px;
+  width: 100%;
 }
 
 .tasks-pipeline-axis-scale {
   position: relative;
   height: 16px;
-  min-width: 720px;
+  width: 100%;
 }
 
 .tasks-pipeline-weekend {
@@ -2637,7 +2670,7 @@ body.is-card-dragging .card {
 
 .tasks-pipeline-rows {
   position: relative;
-  min-width: 720px;
+  width: 100%;
   background:
     repeating-linear-gradient(
       -12deg,
@@ -2881,12 +2914,15 @@ body.is-card-dragging .card {
 }
 
 .tasks-pipeline-empty {
-  position: absolute;
-  inset: 0;
+  position: sticky;
+  left: 0;
+  top: 0;
   display: flex;
   align-items: center;
   justify-content: center;
+  min-height: 200px;
   padding: 24px;
+  box-sizing: border-box;
   text-align: center;
   font-size: 13px;
   color: var(--ink-faint);
@@ -3180,11 +3216,6 @@ body.is-card-dragging .card {
 
   .tasks-view-toggle {
     align-self: flex-start;
-  }
-
-  .tasks-pipeline-period .period-label {
-    min-width: 0;
-    flex: 1;
   }
 }
 
@@ -4041,6 +4072,7 @@ body.is-card-dragging .card {
 
 .board::-webkit-scrollbar,
 .pipeline-chart::-webkit-scrollbar,
+.tasks-pipeline-chart::-webkit-scrollbar,
 .filter-menu-body::-webkit-scrollbar,
 .combobox-suggestions::-webkit-scrollbar,
 .activity-notes::-webkit-scrollbar,
@@ -4053,6 +4085,7 @@ body.is-card-dragging .card {
 .column-body::-webkit-scrollbar-thumb,
 .board::-webkit-scrollbar-thumb,
 .pipeline-chart::-webkit-scrollbar-thumb,
+.tasks-pipeline-chart::-webkit-scrollbar-thumb,
 .filter-menu-body::-webkit-scrollbar-thumb,
 .combobox-suggestions::-webkit-scrollbar-thumb,
 .activity-notes::-webkit-scrollbar-thumb,
@@ -4341,9 +4374,7 @@ body.is-card-dragging .card {
 
   .pipeline-period {
     margin-left: 0;
-    justify-content: space-between;
-    overflow-x: auto;
-    -webkit-overflow-scrolling: touch;
+    justify-content: flex-end;
   }
 
   .tasks-toolbar {
