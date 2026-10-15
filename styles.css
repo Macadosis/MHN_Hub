@@ -4111,6 +4111,8 @@ body.is-card-dragging .card {
   .topbar {
     gap: 8px;
     padding: var(--board-gap) 16px 0;
+    /* Toolbars share z-index 20 and come later, so they painted over this menu */
+    z-index: 40;
   }
 
   .brand-name {
@@ -4165,6 +4167,9 @@ body.is-card-dragging .card {
     gap: 4px;
     flex: none;
     min-width: 180px;
+    max-height: calc(100dvh - 76px - env(safe-area-inset-bottom, 0px));
+    overflow-y: auto;
+    overscroll-behavior: contain;
     padding: 8px;
     background: var(--surface);
     border: 1px solid var(--line);
