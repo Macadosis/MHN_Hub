@@ -2300,6 +2300,44 @@ function columnBodyCanScroll(body, dy) {
   return true;
 }
 
+/** True when this element can still move in the finger's direction. */
+function elementCanScroll(el, axis, delta) {
+  if (!el || el === document.body || el === document.documentElement) return false;
+  const style = getComputedStyle(el);
+  if (axis === "x") {
+    const overflow = style.overflowX;
+    if (overflow !== "auto" && overflow !== "scroll") return false;
+    if (el.scrollWidth <= el.clientWidth + 1) return false;
+    if (delta > 0 && el.scrollLeft <= 0) return false;
+    if (delta < 0 && el.scrollLeft + el.clientWidth >= el.scrollWidth - 1) return false;
+    return true;
+  }
+  const overflow = style.overflowY;
+  if (overflow !== "auto" && overflow !== "scroll") return false;
+  if (el.scrollHeight <= el.clientHeight + 1) return false;
+  if (delta > 0 && el.scrollTop <= 0) return false;
+  if (delta < 0 && el.scrollTop + el.clientHeight >= el.scrollHeight - 1) return false;
+  return true;
+}
+
+function hasScrollableAxis(start, axis) {
+  let el = start;
+  while (el && el !== document.body && el !== document.documentElement) {
+    if (elementCanScroll(el, axis, 1) || elementCanScroll(el, axis, -1)) return true;
+    el = el.parentElement;
+  }
+  return false;
+}
+
+function scrollableAncestor(start, axis, delta) {
+  let el = start;
+  while (el && el !== document.body && el !== document.documentElement) {
+    if (elementCanScroll(el, axis, delta)) return el;
+    el = el.parentElement;
+  }
+  return null;
+}
+
 document.addEventListener(
   "touchstart",
   (e) => {
@@ -2308,15 +2346,11 @@ document.addEventListener(
       return;
     }
     const t = e.touches[0];
-    const el = document.elementFromPoint(t.clientX, t.clientY);
-    const body = el?.closest?.(".column-body") || null;
-    const board = el?.closest?.(".board") || null;
+    const el = (e.target instanceof Element ? e.target : null) || document.elementFromPoint(t.clientX, t.clientY);
     touchScrollGuard = {
       x: t.clientX,
       y: t.clientY,
-      body,
-      board,
-      scrollable: Boolean(body?.classList.contains("is-scrollable")),
+      target: el instanceof Element ? el : null,
     };
   },
   { passive: true, capture: true }
@@ -6203,7 +6237,12 @@ if (tasksPipelineLayout) {
       const canScrollX = tasksPipelineLayout.scrollWidth > tasksPipelineLayout.clientWidth + 1;
       const canScrollY = tasksPipelineLayout.scrollHeight > tasksPipelineLayout.clientHeight + 1;
       if (!canScrollX) return;
-      if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      // Bars sit in an overflow:hidden row, which swallows a sideways wheel.
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        e.preventDefault();
+        tasksPipelineLayout.scrollLeft += e.deltaX;
+        return;
+      }
       if (canScrollY && !e.shiftKey) return;
       e.preventDefault();
       tasksPipelineLayout.scrollLeft += e.deltaY;
@@ -7191,30 +7230,48 @@ document.addEventListener(
     }
     if (!touchScrollGuard || e.touches.length !== 1) return;
 
+    const target = touchScrollGuard.target;
+    if (target?.closest?.("input, textarea, select, [contenteditable='true']")) return;
+
     const t = e.touches[0];
     const dx = t.clientX - touchScrollGuard.x;
     const dy = t.clientY - touchScrollGuard.y;
     const absX = Math.abs(dx);
     const absY = Math.abs(dy);
 
-    // Clearly horizontal — allow board / toolbar panning.
-    if (absX > absY && absX > 8) return;
+    // Let a real pan start. Blocking the first pixels cancels the gesture on iOS,
+    // which made swipes that began on a deal or task feel stuck.
+    if (absX < 8 && absY < 8) {
+      if (!hasScrollableAxis(target, "x") && !hasScrollableAxis(target, "y")) e.preventDefault();
+      return;
+    }
 
-    // Vertical (or ambiguous) gesture: only allow real column-card scrolling.
-    if (columnBodyCanScroll(touchScrollGuard.body, dy)) return;
+    const axis = absX > absY ? "x" : "y";
+    const delta = axis === "x" ? dx : dy;
+    if (scrollableAncestor(target, axis, delta)) return;
 
-    // Empty placeholder, column chrome, board padding, scroll edges, etc.
+    // Nothing under the finger can take this pan — block the page rubber-band.
     e.preventDefault();
   },
   { passive: false, capture: true }
 );
 
 // Desktop trackpad / wheel: never bounce empty columns or the board vertically.
+// A sideways swipe that starts on a deal is swallowed by the column (overflow
+// hidden), so the board has to take that delta itself.
 if (boardEl) {
   boardEl.addEventListener(
     "wheel",
     (e) => {
-      if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return; // horizontal wheel ok
+      const absX = Math.abs(e.deltaX);
+      const absY = Math.abs(e.deltaY);
+      if (e.shiftKey || absX > absY) {
+        const delta = absX > absY ? e.deltaX : e.deltaY;
+        if (!delta || boardEl.scrollWidth <= boardEl.clientWidth + 1) return;
+        e.preventDefault();
+        boardEl.scrollLeft += delta;
+        return;
+      }
       const body = e.target.closest?.(".column-body");
       if (columnBodyCanScroll(body, -e.deltaY)) return;
       e.preventDefault();
@@ -7239,7 +7296,11 @@ if (pipelineChartEl) {
       const canScrollX = pipelineChartEl.scrollWidth > pipelineChartEl.clientWidth + 1;
       const canScrollY = pipelineChartEl.scrollHeight > pipelineChartEl.clientHeight + 1;
       if (!canScrollX) return;
-      if (Math.abs(e.deltaX) >= Math.abs(e.deltaY)) return;
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+        e.preventDefault();
+        pipelineChartEl.scrollLeft += e.deltaX;
+        return;
+      }
       if (canScrollY && !e.shiftKey) return;
       e.preventDefault();
       pipelineChartEl.scrollLeft += e.deltaY;

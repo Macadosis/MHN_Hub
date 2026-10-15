@@ -833,7 +833,9 @@ main {
   overscroll-behavior: none;
   min-height: 0;
   align-items: stretch;
-  touch-action: pan-x;
+  /* pan-y must stay allowed here: an ancestor touch-action is intersected with
+     descendants, so pan-x alone would block scrolling a full column. */
+  touch-action: pan-x pan-y;
 }
 
 .column {
@@ -858,6 +860,7 @@ main {
   padding: 0 16px;
   box-sizing: border-box;
   overflow: hidden;
+  touch-action: pan-x;
 }
 
 .column-header.has-subsets {
@@ -1023,7 +1026,8 @@ main {
   overflow-y: auto;
   overscroll-behavior: none;
   /* Avoid -webkit-overflow-scrolling: touch — it encourages iOS rubber-banding */
-  touch-action: pan-y;
+  /* pan-x as well, so a sideways swipe on a full column still moves the board */
+  touch-action: pan-x pan-y;
 }
 
 .column.drag-over .column-body {
@@ -1040,6 +1044,7 @@ main {
   align-items: baseline;
   justify-content: space-between;
   gap: 10px;
+  touch-action: pan-x;
 }
 
 .column-footer .total-label {
@@ -1712,6 +1717,7 @@ body.is-card-dragging .card {
   border: 1px solid var(--pipeline-green);
   border-radius: 999px;
   cursor: pointer;
+  touch-action: pan-x pan-y;
   font-family: var(--font-sans);
   text-align: left;
   min-width: 0;
@@ -2747,6 +2753,7 @@ body.is-card-dragging .card {
   border-left-width: 4px;
   border-radius: 5px;
   cursor: pointer;
+  touch-action: pan-x pan-y;
   font-family: var(--font-sans);
   text-align: left;
   width: max-content;
@@ -3094,6 +3101,7 @@ body.is-card-dragging .card {
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-card);
   cursor: pointer;
+  touch-action: pan-y;
   position: relative;
   transition: border-color 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease, background 0.15s ease;
 }
@@ -3187,12 +3195,14 @@ body.is-card-dragging .card {
     margin-left: 0;
     width: 100%;
     justify-content: space-between;
+    flex-wrap: nowrap;
   }
 
   .tasks-pipeline-period {
-    width: 100%;
+    width: auto;
+    margin-left: auto;
     justify-content: flex-end;
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
   }
 }
 
@@ -3210,12 +3220,14 @@ body.is-card-dragging .card {
   }
 
   .tasks-toolbar-aside {
-    flex-direction: column;
-    align-items: stretch;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
   }
 
   .tasks-view-toggle {
-    align-self: flex-start;
+    align-self: center;
+    flex-shrink: 0;
   }
 }
 
