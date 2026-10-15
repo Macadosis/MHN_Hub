@@ -65,6 +65,7 @@ const TASKS_PIPELINE_COMPANY_TONES = ["sage", "lavender", "sky", "sand", "peach"
 /** Space reserved beside a bubble for the day-offset so neighbors don’t crush it. */
 const TASKS_PIPELINE_OFFSET_RESERVE_PX = 22;
 const TASK_TYPES = [
+  { id: "email", label: "Email" },
   { id: "call", label: "Call" },
   { id: "meet", label: "Meet" },
   { id: "ticket", label: "Ticket" },
@@ -4170,6 +4171,20 @@ function createTaskTypeIcon(type) {
       })
     );
     svg.appendChild(createSvgEl("path", { ...stroke, d: "M9.5 8.2v7.6" }));
+  } else if (id === "email") {
+    svg.appendChild(
+      createSvgEl("rect", {
+        ...stroke,
+        x: "3.6",
+        y: "5.6",
+        width: "16.8",
+        height: "12.8",
+        rx: "1.8",
+      })
+    );
+    svg.appendChild(
+      createSvgEl("path", { ...stroke, d: "M4.2 7.4l7.8 6.1 7.8-6.1" })
+    );
   }
   return svg;
 }
