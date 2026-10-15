@@ -1,7 +1,7 @@
 {
-  "name": "MHN Sales",
-  "short_name": "MHN Sales",
-  "description": "MHN sales board and pipeline",
+  "name": "MHN Hub",
+  "short_name": "MHN Hub",
+  "description": "MHN Hub sales board and pipeline",
   "start_url": "./",
   "scope": "./",
   "display": "standalone",
