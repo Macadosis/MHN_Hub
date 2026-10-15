@@ -640,7 +640,7 @@ function showCloudReadOnlyBanner() {
   banner.className = "cloud-readonly-banner";
   banner.innerHTML =
     "<strong>Local / preview mode</strong> — cloud data is read-only here. " +
-    "Use the <a href=\"https://macadosis.github.io/MHNsales/\" target=\"_blank\" rel=\"noopener\">GitHub Pages app</a> " +
+    "Use the <a href=\"https://macadosis.github.io/MHN_Hub/\" target=\"_blank\" rel=\"noopener\">GitHub Pages app</a> " +
     "to create or edit live deals.";
   const topbar = document.querySelector(".topbar");
   if (topbar) topbar.insertAdjacentElement("afterend", banner);

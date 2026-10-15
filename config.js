@@ -1,5 +1,5 @@
-/* MHN Sales — Supabase credentials
- * Project: MHNsales
+/* MHN Hub — Supabase credentials
+ * Project: MHN_Hub
  * Auth: enable Email provider; for a small team, disable Confirm email.
  */
 window.MHN_CONFIG = {

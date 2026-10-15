@@ -1,4 +1,4 @@
-# MHN Sales
+# MHN Hub
 
 Personal sales pipeline tool (HubSpot-style Kanban) with a Claude Fable–inspired design. Data syncs across devices via **Supabase**.
 
@@ -16,7 +16,7 @@ Only the **GitHub Pages** app (`*.github.io`) can write to Supabase.
 
 | Origin | Read cloud | Write cloud |
 |--------|------------|-------------|
-| `https://macadosis.github.io/MHNsales/` | yes | **yes** (after load) |
+| `https://macadosis.github.io/MHN_Hub/` | yes | **yes** (after load) |
 | `localhost` / `file://` / Desktop | yes | **no** |
 
 Additional safeguards:
@@ -59,7 +59,7 @@ Columns the app expects today: `id`, `company`, `contact`, `phone`, `email`, `in
 
 ### 1. Supabase
 
-1. Open your **MHNsales** project in [Supabase](https://supabase.com).
+1. Open your **MHN Hub** project in [Supabase](https://supabase.com).
 2. Go to **SQL Editor**, paste and run `supabase/schema.sql`.
 3. Go to **Project Settings → API** and copy:
    - Project URL
@@ -85,11 +85,11 @@ Open http://localhost:8000
 
 ### 3. GitHub Pages
 
-After pushing to the **MHNsales** repo:
+After pushing to the **MHN_Hub** repo:
 
 1. **Settings → Pages**
 2. Source: **Deploy from a branch** → `main` → `/` (root)
-3. Site URL: `https://YOUR_USERNAME.github.io/MHNsales/`
+3. Site URL: `https://YOUR_USERNAME.github.io/MHN_Hub/`
 
 Keep the repo **private** if you use the open RLS policy in `schema.sql` (personal multi-device use).
 

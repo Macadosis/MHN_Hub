@@ -1,4 +1,4 @@
-/* MHN Sales — Supabase credentials
+/* MHN Hub — Supabase credentials
  *
  * Fill these from: Supabase → Project Settings → API
  * Then rename this file to config.js (or edit config.js directly).
