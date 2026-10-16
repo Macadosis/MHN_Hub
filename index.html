@@ -554,8 +554,15 @@
                   <span class="field-sublabel">Start date</span>
                   <input type="date" name="implementationStart" />
                 </label>
-                <div class="field">
-                  <span class="field-sublabel">Contract name</span>
+                <label class="field">
+                  <span class="field-sublabel">Duration</span>
+                  <div class="input-with-suffix">
+                    <input type="number" name="implementationDuration" min="1" step="1" placeholder="e.g. 90" />
+                    <span class="input-suffix" aria-hidden="true">days</span>
+                  </div>
+                </label>
+                <div class="field implementation-contract">
+                  <span class="field-sublabel">Contract #</span>
                   <div class="input-with-action">
                     <input type="text" name="contractName" placeholder="Optional" autocomplete="off" />
                     <button
@@ -580,13 +587,6 @@
                     />
                   </div>
                 </div>
-                <label class="field">
-                  <span class="field-sublabel">Duration</span>
-                  <div class="input-with-suffix">
-                    <input type="number" name="implementationDuration" min="1" step="1" placeholder="e.g. 90" />
-                    <span class="input-suffix" aria-hidden="true">days</span>
-                  </div>
-                </label>
               </div>
             </div>
           </div>
@@ -754,8 +754,15 @@
               <span class="field-sublabel">Start date</span>
               <input type="date" name="startDate" required />
             </label>
-            <div class="field">
-              <span class="field-sublabel">Contract name</span>
+            <label class="field">
+              <span class="field-sublabel">Duration</span>
+              <div class="input-with-suffix">
+                <input type="number" name="days" min="1" step="1" placeholder="e.g. 90" required />
+                <span class="input-suffix" aria-hidden="true">days</span>
+              </div>
+            </label>
+            <div class="field implementation-contract">
+              <span class="field-sublabel">Contract #</span>
               <div class="input-with-action">
                 <input type="text" name="contractName" placeholder="Optional" autocomplete="off" />
                 <button
@@ -780,13 +787,6 @@
                 />
               </div>
             </div>
-            <label class="field">
-              <span class="field-sublabel">Duration</span>
-              <div class="input-with-suffix">
-                <input type="number" name="days" min="1" step="1" placeholder="e.g. 90" required />
-                <span class="input-suffix" aria-hidden="true">days</span>
-              </div>
-            </label>
           </div>
           <span class="field-hint">Enter the expected duration in days</span>
         </div>
