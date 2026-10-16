@@ -189,6 +189,7 @@ function dealToRow(deal, { nextVersion } = {}) {
     value: Number(deal.value) || 0,
     owner: deal.owner || "",
     stage: deal.stage || "prospects",
+    contract_name: deal.contractName || "",
     implementation_days: deal.implementationDays ?? null,
     board_order: deal.boardOrder ?? null,
     committed_at: msToIso(deal.committedAt),
@@ -220,6 +221,7 @@ function rowToDeal(row) {
     value: Number(row.value) || 0,
     owner: row.owner || "",
     stage: row.stage || "prospects",
+    contractName: row.contract_name || "",
     implementationDays: row.implementation_days ?? undefined,
     boardOrder: row.board_order ?? undefined,
     committedAt: isoToMs(row.committed_at) ?? undefined,
@@ -314,6 +316,10 @@ async function withColumnCompat(run) {
     }
     if (/pinned_at/i.test(msg) && !omit.has("pinned_at")) {
       omit.add("pinned_at");
+      continue;
+    }
+    if (/contract_name/i.test(msg) && !omit.has("contract_name")) {
+      omit.add("contract_name");
       continue;
     }
     return result;

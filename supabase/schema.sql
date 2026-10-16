@@ -46,6 +46,9 @@ alter table public.deals
 alter table public.deals
   add column if not exists committed_entered_at timestamptz;
 
+alter table public.deals
+  add column if not exists contract_name text default '';
+
 -- Optimistic concurrency: each successful write increments version
 alter table public.deals
   add column if not exists version bigint not null default 1;

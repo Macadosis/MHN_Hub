@@ -2577,6 +2577,7 @@ function showPipelineTooltip(bar, deal, barStart, barEnd, event) {
 
     const rows = [
       deal.tool ? ["Tool", deal.tool] : null,
+      deal.contractName ? ["Contract", deal.contractName] : null,
       ["Duration", `${deal.implementationDays} days`],
       [
         "Dates",
@@ -3064,6 +3065,12 @@ function renderCard(deal) {
     tag.className = "tag tag-industry";
     tag.textContent = deal.industry;
     tags.appendChild(tag);
+  }
+  if (deal.contractName) {
+    const contract = document.createElement("span");
+    contract.className = "tag tag-contract";
+    contract.textContent = deal.contractName;
+    tags.appendChild(contract);
   }
   if (deal.implementationDays && deal.committedAt && !isDealPaused(deal)) {
     const impl = document.createElement("span");
@@ -4151,6 +4158,7 @@ function openCommitModal(deal) {
   if (deal.implementationDays) {
     commitForm.elements.days.value = deal.implementationDays;
   }
+  commitForm.elements.contractName.value = deal.contractName || "";
   commitOverlay.hidden = false;
   commitForm.elements.startDate.focus();
 }
@@ -4170,6 +4178,7 @@ commitForm.addEventListener("submit", (e) => {
 
   pendingCommitDeal.committedAt = startDate;
   pendingCommitDeal.implementationDays = days;
+  pendingCommitDeal.contractName = toTitleCase(commitForm.elements.contractName.value);
   moveDealToStage(pendingCommitDeal, "committed", null);
   saveDeals(getStageDeals("committed").map((d) => d.id));
   render();
@@ -5856,9 +5865,11 @@ function openModal({
         ? toDateInputValue(deal.committedAt)
         : "";
       form.elements.implementationDuration.value = deal.implementationDays || "";
+      form.elements.contractName.value = deal.contractName || "";
     } else {
       form.elements.implementationStart.value = "";
       form.elements.implementationDuration.value = "";
+      form.elements.contractName.value = "";
     }
   } else {
     implementationFields.hidden = true;
@@ -5866,6 +5877,7 @@ function openModal({
     form.elements.implementationDuration.required = false;
     form.elements.implementationStart.value = "";
     form.elements.implementationDuration.value = "";
+    form.elements.contractName.value = "";
     form.elements.owner.value = getCurrentUserName();
   }
 
@@ -6125,6 +6137,7 @@ function saveDealFromForm() {
         deal.committedAt = startDate;
         deal.implementationDays = days;
       }
+      deal.contractName = toTitleCase(form.elements.contractName.value);
     }
     saveDeals(deal.id);
   } else {
