@@ -554,10 +554,32 @@
                   <span class="field-sublabel">Start date</span>
                   <input type="date" name="implementationStart" />
                 </label>
-                <label class="field">
+                <div class="field">
                   <span class="field-sublabel">Contract name</span>
-                  <input type="text" name="contractName" placeholder="e.g. Acme rollout" autocomplete="off" />
-                </label>
+                  <div class="input-with-action">
+                    <input type="text" name="contractName" placeholder="Optional" autocomplete="off" />
+                    <button
+                      type="button"
+                      class="field-file-btn"
+                      id="dealContractFileBtn"
+                      aria-label="Upload contract file"
+                      title="Upload contract file"
+                    >
+                      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                        <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                        <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                        <path d="M9 13h6M9 17h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                      </svg>
+                    </button>
+                    <input
+                      type="file"
+                      id="dealContractFileInput"
+                      class="field-file-input"
+                      accept=".pdf,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                      hidden
+                    />
+                  </div>
+                </div>
                 <label class="field">
                   <span class="field-sublabel">Duration</span>
                   <div class="input-with-suffix">
@@ -732,10 +754,32 @@
               <span class="field-sublabel">Start date</span>
               <input type="date" name="startDate" required />
             </label>
-            <label class="field">
+            <div class="field">
               <span class="field-sublabel">Contract name</span>
-              <input type="text" name="contractName" placeholder="e.g. Acme rollout" autocomplete="off" />
-            </label>
+              <div class="input-with-action">
+                <input type="text" name="contractName" placeholder="Optional" autocomplete="off" />
+                <button
+                  type="button"
+                  class="field-file-btn"
+                  id="commitContractFileBtn"
+                  aria-label="Upload contract file"
+                  title="Upload contract file"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                    <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                    <path d="M9 13h6M9 17h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  </svg>
+                </button>
+                <input
+                  type="file"
+                  id="commitContractFileInput"
+                  class="field-file-input"
+                  accept=".pdf,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  hidden
+                />
+              </div>
+            </div>
             <label class="field">
               <span class="field-sublabel">Duration</span>
               <div class="input-with-suffix">

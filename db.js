@@ -190,6 +190,8 @@ function dealToRow(deal, { nextVersion } = {}) {
     owner: deal.owner || "",
     stage: deal.stage || "prospects",
     contract_name: deal.contractName || "",
+    contract_file_path: deal.contractFilePath || "",
+    contract_file_name: deal.contractFileName || "",
     implementation_days: deal.implementationDays ?? null,
     board_order: deal.boardOrder ?? null,
     committed_at: msToIso(deal.committedAt),
@@ -222,6 +224,8 @@ function rowToDeal(row) {
     owner: row.owner || "",
     stage: row.stage || "prospects",
     contractName: row.contract_name || "",
+    contractFilePath: row.contract_file_path || "",
+    contractFileName: row.contract_file_name || "",
     implementationDays: row.implementation_days ?? undefined,
     boardOrder: row.board_order ?? undefined,
     committedAt: isoToMs(row.committed_at) ?? undefined,
@@ -320,6 +324,14 @@ async function withColumnCompat(run) {
     }
     if (/contract_name/i.test(msg) && !omit.has("contract_name")) {
       omit.add("contract_name");
+      continue;
+    }
+    if (/contract_file_path/i.test(msg) && !omit.has("contract_file_path")) {
+      omit.add("contract_file_path");
+      continue;
+    }
+    if (/contract_file_name/i.test(msg) && !omit.has("contract_file_name")) {
+      omit.add("contract_file_name");
       continue;
     }
     return result;
@@ -671,6 +683,70 @@ function subscribeToDealChanges(onChange) {
   };
 }
 
+const CONTRACTS_BUCKET = "contracts";
+const CONTRACT_SIGNED_URL_SECONDS = 60 * 60; // 1 hour
+const CONTRACT_MAX_BYTES = 20 * 1024 * 1024;
+
+function sanitizeContractFileName(name) {
+  const base = String(name || "contract")
+    .trim()
+    .replace(/[/\\?%*:|"<>]/g, "-")
+    .replace(/\s+/g, " ")
+    .slice(0, 120);
+  return base || "contract.pdf";
+}
+
+function isAllowedContractFile(file) {
+  if (!file) return false;
+  if (file.size > CONTRACT_MAX_BYTES) return false;
+  const mime = String(file.type || "").toLowerCase();
+  const name = String(file.name || "").toLowerCase();
+  if (mime === "application/pdf" || name.endsWith(".pdf")) return true;
+  if (mime === "application/msword" || name.endsWith(".doc")) return true;
+  if (
+    mime === "application/vnd.openxmlformats-officedocument.wordprocessingml.document" ||
+    name.endsWith(".docx")
+  ) {
+    return true;
+  }
+  return false;
+}
+
+async function uploadContractFile(dealId, file) {
+  if (!db) throw new Error("Supabase is not configured");
+  assertCloudWriteAllowed();
+  if (!dealId) throw new Error("Missing deal id for contract upload");
+  if (!isAllowedContractFile(file)) {
+    throw new Error("Choose a PDF or Word file under 20 MB");
+  }
+
+  const safeName = sanitizeContractFileName(file.name);
+  const path = `${dealId}/${Date.now()}-${safeName}`;
+  const { error } = await db.storage.from(CONTRACTS_BUCKET).upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType: file.type || "application/pdf",
+  });
+  if (error) throw error;
+  return { path, fileName: safeName };
+}
+
+async function getContractFilePreviewUrl(path) {
+  if (!db || !path) return null;
+  const { data, error } = await db.storage
+    .from(CONTRACTS_BUCKET)
+    .createSignedUrl(path, CONTRACT_SIGNED_URL_SECONDS);
+  if (error) throw error;
+  return data?.signedUrl || null;
+}
+
+async function removeContractFile(path) {
+  if (!db || !path) return;
+  if (!cloudWriteAllowedByOrigin || !cloudHydrated) return;
+  const { error } = await db.storage.from(CONTRACTS_BUCKET).remove([path]);
+  if (error) console.warn("Could not remove previous contract file:", error);
+}
+
 window.MHN_DB = {
   client: db,
   isRemote: Boolean(db),
@@ -697,4 +773,8 @@ window.MHN_DB = {
   saveDealsAsync,
   deleteDealAsync,
   subscribeToDealChanges,
+  uploadContractFile,
+  getContractFilePreviewUrl,
+  removeContractFile,
+  isAllowedContractFile,
 };
