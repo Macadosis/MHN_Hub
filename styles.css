@@ -3816,7 +3816,10 @@ body.is-card-dragging .card {
   gap: 5px;
   min-width: 0;
 }
-.field.span-2 { grid-column: span 2; }
+.field.span-2,
+.implementation-fields.span-2 {
+  grid-column: span 2;
+}
 
 .field-label {
   font-size: 12px;
@@ -4079,12 +4082,52 @@ body.is-card-dragging .card {
   gap: 5px;
   padding-top: 4px;
   border-top: 1px solid var(--line);
+  container-type: inline-size;
+  container-name: implementation;
 }
 
 .implementation-grid {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  /* Desktop: Start date | Duration | Contract # */
+  grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.95fr) minmax(0, 1.2fr);
   gap: 14px 16px;
+}
+
+.implementation-contract {
+  min-width: 0;
+}
+
+/* Narrow modal / mobile: calendar + days on one row, Contract # full width below.
+   Deal modal (~504px) stays 3-across; phones and the small commit modal wrap. */
+@container implementation (max-width: 460px) {
+  .implementation-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .implementation-contract {
+    grid-column: 1 / -1;
+  }
+}
+
+/* Fallback when container queries are unavailable */
+@supports not (container-type: inline-size) {
+  @media (max-width: 720px) {
+    .implementation-grid {
+      grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    }
+
+    .implementation-contract {
+      grid-column: 1 / -1;
+    }
+  }
+
+  .modal-sm .implementation-grid {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+
+  .modal-sm .implementation-contract {
+    grid-column: 1 / -1;
+  }
 }
 
 .field-sublabel {
