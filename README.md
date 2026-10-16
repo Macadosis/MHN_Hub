@@ -52,7 +52,9 @@ where table_schema = 'public' and table_name = 'deals'
 order by ordinal_position;
 ```
 
-Columns the app expects today: `id`, `company`, `contact`, `phone`, `email`, `industry`, `tool`, `value`, `owner`, `stage`, `implementation_days`, `committed_at`, `dismissed_at`, `paused_at`, `pinned_at`, `created_at`, `updated_at`, `notes`, `board_order`, `tasks`, `version`.
+Columns the app expects today: `id`, `company`, `contact`, `phone`, `email`, `industry`, `tool`, `value`, `owner`, `stage`, `contract_name`, `contract_file_path`, `contract_file_name`, `implementation_days`, `committed_at`, `dismissed_at`, `paused_at`, `pinned_at`, `created_at`, `updated_at`, `notes`, `board_order`, `tasks`, `version`.
+
+Contract PDFs live in the private Supabase Storage bucket `contracts` (authenticated read/upload).
 
 
 ## Setup

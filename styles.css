@@ -45,6 +45,9 @@
   --chip-peach-bg: #f5e5dd;
   --chip-peach-ink: #a86a52;
   --chip-peach-line: #e8cfc4;
+  --chip-contract-bg: #f5e5dd;
+  --chip-contract-ink: #a86a52;
+  --chip-contract-line: #e8cfc4;
   --chip-rose-bg: #f3e8e6;
   --chip-rose-ink: #8a5e5a;
   --chip-rose-line: #e0cdc9;
@@ -1422,6 +1425,12 @@ body.is-card-dragging .card {
   color: var(--chip-impl-ink);
   background: var(--chip-impl-bg);
   border-color: var(--chip-impl-line);
+}
+
+.tag-contract {
+  color: var(--chip-contract-ink);
+  background: var(--chip-contract-bg);
+  border-color: var(--chip-contract-line);
 }
 
 .empty-hint {
@@ -3949,6 +3958,57 @@ body.is-card-dragging .card {
 .combobox-suggestion-paused {
   color: var(--accent);
   font-weight: 500;
+}
+
+.input-with-action {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+}
+
+.input-with-action input[type="text"] {
+  width: 100%;
+  min-width: 0;
+  height: 38px;
+  padding-right: 42px;
+}
+
+.field-file-btn {
+  position: absolute;
+  right: 6px;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 30px;
+  height: 30px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 0;
+}
+
+.field-file-btn:hover {
+  color: var(--ink);
+  background: var(--bg-sunken);
+}
+
+.field-file-btn.is-attached {
+  color: var(--chip-contract-ink);
+  background: var(--chip-contract-bg);
+}
+
+.field-file-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.field-file-btn:disabled:hover {
+  color: var(--ink-soft);
+  background: transparent;
 }
 
 .input-with-suffix {

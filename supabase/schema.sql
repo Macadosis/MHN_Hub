@@ -46,6 +46,62 @@ alter table public.deals
 alter table public.deals
   add column if not exists committed_entered_at timestamptz;
 
+alter table public.deals
+  add column if not exists contract_name text default '';
+
+alter table public.deals
+  add column if not exists contract_file_path text default '';
+
+alter table public.deals
+  add column if not exists contract_file_name text default '';
+
+-- Private bucket for contract files (PDF / Word)
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'contracts',
+  'contracts',
+  false,
+  20971520,
+  array[
+    'application/pdf',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  ]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Authenticated users can read contracts" on storage.objects;
+create policy "Authenticated users can read contracts"
+  on storage.objects
+  for select
+  to authenticated
+  using (bucket_id = 'contracts');
+
+drop policy if exists "Authenticated users can upload contracts" on storage.objects;
+create policy "Authenticated users can upload contracts"
+  on storage.objects
+  for insert
+  to authenticated
+  with check (bucket_id = 'contracts');
+
+drop policy if exists "Authenticated users can update contracts" on storage.objects;
+create policy "Authenticated users can update contracts"
+  on storage.objects
+  for update
+  to authenticated
+  using (bucket_id = 'contracts')
+  with check (bucket_id = 'contracts');
+
+drop policy if exists "Authenticated users can delete contracts" on storage.objects;
+create policy "Authenticated users can delete contracts"
+  on storage.objects
+  for delete
+  to authenticated
+  using (bucket_id = 'contracts');
+
 -- Optimistic concurrency: each successful write increments version
 alter table public.deals
   add column if not exists version bigint not null default 1;

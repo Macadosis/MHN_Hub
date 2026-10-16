@@ -129,6 +129,18 @@ const commitOverlay = document.getElementById("commitOverlay");
 const commitForm = document.getElementById("commitForm");
 const commitDealName = document.getElementById("commitDealName");
 const implementationFields = document.getElementById("implementationFields");
+const dealContractFileBtn = document.getElementById("dealContractFileBtn");
+const dealContractFileInput = document.getElementById("dealContractFileInput");
+const commitContractFileBtn = document.getElementById("commitContractFileBtn");
+const commitContractFileInput = document.getElementById("commitContractFileInput");
+
+/** Pending local File chosen in the deal/commit modals before upload. */
+let modalContractFile = null;
+let modalContractFilePath = "";
+let modalContractFileName = "";
+let commitContractFile = null;
+let commitContractFilePath = "";
+let commitContractFileName = "";
 const activityNotesEl = document.getElementById("activityNotes");
 const activityNotesOnlyInput = document.getElementById("activityNotesOnly");
 const newNoteInput = document.getElementById("newNoteInput");
@@ -2577,6 +2589,7 @@ function showPipelineTooltip(bar, deal, barStart, barEnd, event) {
 
     const rows = [
       deal.tool ? ["Tool", deal.tool] : null,
+      deal.contractName ? ["Contract", deal.contractName] : null,
       ["Duration", `${deal.implementationDays} days`],
       [
         "Dates",
@@ -3064,6 +3077,12 @@ function renderCard(deal) {
     tag.className = "tag tag-industry";
     tag.textContent = deal.industry;
     tags.appendChild(tag);
+  }
+  if (deal.contractName) {
+    const contract = document.createElement("span");
+    contract.className = "tag tag-contract";
+    contract.textContent = deal.contractName;
+    tags.appendChild(contract);
   }
   if (deal.implementationDays && deal.committedAt && !isDealPaused(deal)) {
     const impl = document.createElement("span");
@@ -4141,6 +4160,90 @@ function hasImplementationSchedule(deal) {
   return Boolean(deal?.committedAt) && Number(deal?.implementationDays) > 0;
 }
 
+function syncContractFileButton(btn, { fileName = "", path = "", pendingFile = null } = {}) {
+  if (!btn) return;
+  const attached = Boolean(pendingFile || path || fileName);
+  btn.classList.toggle("is-attached", attached);
+  const label = attached
+    ? `Open contract${fileName ? ` (${fileName})` : ""}`
+    : "Upload contract file";
+  btn.setAttribute("aria-label", label);
+  btn.title = attached
+    ? `${label}. Shift-click to replace.`
+    : "Upload contract file (PDF or Word)";
+}
+
+function resetDealContractFileState(deal = null) {
+  modalContractFile = null;
+  modalContractFilePath = deal?.contractFilePath || "";
+  modalContractFileName = deal?.contractFileName || "";
+  if (dealContractFileInput) dealContractFileInput.value = "";
+  syncContractFileButton(dealContractFileBtn, {
+    fileName: modalContractFileName,
+    path: modalContractFilePath,
+    pendingFile: modalContractFile,
+  });
+}
+
+function resetCommitContractFileState(deal = null) {
+  commitContractFile = null;
+  commitContractFilePath = deal?.contractFilePath || "";
+  commitContractFileName = deal?.contractFileName || "";
+  if (commitContractFileInput) commitContractFileInput.value = "";
+  syncContractFileButton(commitContractFileBtn, {
+    fileName: commitContractFileName,
+    path: commitContractFilePath,
+    pendingFile: commitContractFile,
+  });
+}
+
+async function openContractPreview({ pendingFile = null, path = "", fileName = "" } = {}) {
+  if (pendingFile) {
+    const url = URL.createObjectURL(pendingFile);
+    window.open(url, "_blank", "noopener,noreferrer");
+    // Revoke after the browser has a chance to load the blob tab.
+    setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    return;
+  }
+  if (!path) return;
+  const api = window.MHN_DB;
+  if (!api?.getContractFilePreviewUrl) {
+    showSyncStatus("Contract preview unavailable offline", true, true);
+    return;
+  }
+  try {
+    const url = await api.getContractFilePreviewUrl(path);
+    if (!url) throw new Error("No preview URL");
+    window.open(url, "_blank", "noopener,noreferrer");
+  } catch (err) {
+    console.error(err);
+    showSyncStatus(
+      `Could not open contract${fileName ? ` “${fileName}”` : ""}${syncErrorDetail(err)}`,
+      true,
+      true
+    );
+  }
+}
+
+async function ensureContractFileUploaded(dealId, { pendingFile, path, fileName }) {
+  if (!pendingFile) {
+    return { path: path || "", fileName: fileName || "" };
+  }
+  const api = window.MHN_DB;
+  if (!api?.uploadContractFile) {
+    throw new Error("Contract upload unavailable");
+  }
+  if (!api.cloudWriteEnabled) {
+    throw new Error("Contract upload needs the deployed app while signed in");
+  }
+  const previousPath = path || "";
+  const uploaded = await api.uploadContractFile(dealId, pendingFile);
+  if (previousPath && previousPath !== uploaded.path && api.removeContractFile) {
+    api.removeContractFile(previousPath).catch(() => {});
+  }
+  return { path: uploaded.path, fileName: uploaded.fileName };
+}
+
 function openCommitModal(deal) {
   pendingCommitDeal = deal;
   commitDealName.textContent = deal.company;
@@ -4151,6 +4254,8 @@ function openCommitModal(deal) {
   if (deal.implementationDays) {
     commitForm.elements.days.value = deal.implementationDays;
   }
+  commitForm.elements.contractName.value = deal.contractName || "";
+  resetCommitContractFileState(deal);
   commitOverlay.hidden = false;
   commitForm.elements.startDate.focus();
 }
@@ -4158,9 +4263,10 @@ function openCommitModal(deal) {
 function closeCommitModal() {
   commitOverlay.hidden = true;
   pendingCommitDeal = null;
+  resetCommitContractFileState(null);
 }
 
-commitForm.addEventListener("submit", (e) => {
+commitForm.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (!pendingCommitDeal) return;
 
@@ -4168,12 +4274,93 @@ commitForm.addEventListener("submit", (e) => {
   const days = Number(commitForm.elements.days.value);
   if (!startDate || !days || days < 1) return;
 
-  pendingCommitDeal.committedAt = startDate;
-  pendingCommitDeal.implementationDays = days;
-  moveDealToStage(pendingCommitDeal, "committed", null);
-  saveDeals(getStageDeals("committed").map((d) => d.id));
-  render();
-  closeCommitModal();
+  const submitBtn = commitForm.querySelector('button[type="submit"]');
+  if (submitBtn) submitBtn.disabled = true;
+  try {
+    const uploaded = await ensureContractFileUploaded(pendingCommitDeal.id, {
+      pendingFile: commitContractFile,
+      path: commitContractFilePath,
+      fileName: commitContractFileName,
+    });
+    pendingCommitDeal.committedAt = startDate;
+    pendingCommitDeal.implementationDays = days;
+    pendingCommitDeal.contractName = toTitleCase(commitForm.elements.contractName.value);
+    pendingCommitDeal.contractFilePath = uploaded.path;
+    pendingCommitDeal.contractFileName = uploaded.fileName;
+    moveDealToStage(pendingCommitDeal, "committed", null);
+    saveDeals(getStageDeals("committed").map((d) => d.id));
+    render();
+    closeCommitModal();
+  } catch (err) {
+    console.error(err);
+    showSyncStatus(`Could not save contract file${syncErrorDetail(err)}`, true, true);
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+});
+
+function acceptContractFile(file, mode) {
+  const api = window.MHN_DB;
+  if (api?.isAllowedContractFile && !api.isAllowedContractFile(file)) {
+    showSyncStatus("Choose a PDF or Word file under 20 MB", true, true);
+    return;
+  }
+  if (mode === "commit") {
+    commitContractFile = file;
+    commitContractFileName = file.name;
+    syncContractFileButton(commitContractFileBtn, {
+      fileName: commitContractFileName,
+      path: commitContractFilePath,
+      pendingFile: commitContractFile,
+    });
+    return;
+  }
+  modalContractFile = file;
+  modalContractFileName = file.name;
+  syncContractFileButton(dealContractFileBtn, {
+    fileName: modalContractFileName,
+    path: modalContractFilePath,
+    pendingFile: modalContractFile,
+  });
+}
+
+dealContractFileBtn?.addEventListener("click", (e) => {
+  const hasFile = Boolean(modalContractFile || modalContractFilePath);
+  if (hasFile && (modalReadOnly || !e.shiftKey)) {
+    openContractPreview({
+      pendingFile: modalContractFile,
+      path: modalContractFilePath,
+      fileName: modalContractFileName,
+    });
+    return;
+  }
+  if (modalReadOnly) return;
+  dealContractFileInput?.click();
+});
+
+commitContractFileBtn?.addEventListener("click", (e) => {
+  const hasFile = Boolean(commitContractFile || commitContractFilePath);
+  if (hasFile && !e.shiftKey) {
+    openContractPreview({
+      pendingFile: commitContractFile,
+      path: commitContractFilePath,
+      fileName: commitContractFileName,
+    });
+    return;
+  }
+  commitContractFileInput?.click();
+});
+
+dealContractFileInput?.addEventListener("change", () => {
+  const file = dealContractFileInput.files?.[0];
+  if (file) acceptContractFile(file, "deal");
+  dealContractFileInput.value = "";
+});
+
+commitContractFileInput?.addEventListener("change", () => {
+  const file = commitContractFileInput.files?.[0];
+  if (file) acceptContractFile(file, "commit");
+  commitContractFileInput.value = "";
 });
 
 document.getElementById("commitCloseBtn").addEventListener("click", closeCommitModal);
@@ -5856,9 +6043,13 @@ function openModal({
         ? toDateInputValue(deal.committedAt)
         : "";
       form.elements.implementationDuration.value = deal.implementationDays || "";
+      form.elements.contractName.value = deal.contractName || "";
+      resetDealContractFileState(deal);
     } else {
       form.elements.implementationStart.value = "";
       form.elements.implementationDuration.value = "";
+      form.elements.contractName.value = "";
+      resetDealContractFileState(null);
     }
   } else {
     implementationFields.hidden = true;
@@ -5866,6 +6057,8 @@ function openModal({
     form.elements.implementationDuration.required = false;
     form.elements.implementationStart.value = "";
     form.elements.implementationDuration.value = "";
+    form.elements.contractName.value = "";
+    resetDealContractFileState(null);
     form.elements.owner.value = getCurrentUserName();
   }
 
@@ -5923,6 +6116,10 @@ function applyModalReadOnly(isReadOnly) {
   dealTasksComposer.hidden = isReadOnly;
   newTaskNameInput.readOnly = isReadOnly;
   newTaskDueInput.disabled = isReadOnly;
+  if (dealContractFileBtn) {
+    // Keep preview available in read-only; only block choosing a new file.
+    dealContractFileBtn.disabled = false;
+  }
   mountComposerTaskTypePicker();
   cancelBtn.textContent = isReadOnly ? "Close" : "Cancel";
 }
@@ -5936,6 +6133,7 @@ function closeModal() {
   applyModalReadOnly(false);
   modalNotes = [];
   modalTasks = [];
+  resetDealContractFileState(null);
   newNoteInput.value = "";
   newTaskNameInput.value = "";
   newTaskDueInput.value = "";
@@ -6045,7 +6243,7 @@ function openPendingDraftModal(kind) {
   pendingDraftOverlay.hidden = false;
 }
 
-function confirmPendingDraft() {
+async function confirmPendingDraft() {
   if (pendingDraftKind === "note") {
     addActivityNote();
     if (hasPendingNoteDraft()) return;
@@ -6054,7 +6252,7 @@ function confirmPendingDraft() {
       openPendingDraftModal("task");
       return;
     }
-    saveDealFromForm();
+    await saveDealFromForm();
     return;
   }
 
@@ -6075,11 +6273,11 @@ function confirmPendingDraft() {
       return;
     }
     closePendingDraftModal();
-    saveDealFromForm();
+    await saveDealFromForm();
   }
 }
 
-function saveDealFromForm() {
+async function saveDealFromForm() {
   const data = {
     company: toTitleCase(form.elements.company.value),
     contact: toTitleCase(form.elements.contact.value),
@@ -6125,6 +6323,20 @@ function saveDealFromForm() {
         deal.committedAt = startDate;
         deal.implementationDays = days;
       }
+      deal.contractName = toTitleCase(form.elements.contractName.value);
+      try {
+        const uploaded = await ensureContractFileUploaded(deal.id, {
+          pendingFile: modalContractFile,
+          path: modalContractFilePath,
+          fileName: modalContractFileName,
+        });
+        deal.contractFilePath = uploaded.path;
+        deal.contractFileName = uploaded.fileName;
+      } catch (err) {
+        console.error(err);
+        showSyncStatus(`Could not save contract file${syncErrorDetail(err)}`, true, true);
+        return;
+      }
     }
     saveDeals(deal.id);
   } else {
@@ -6154,7 +6366,7 @@ function saveDealFromForm() {
   closeModal();
 }
 
-form.addEventListener("submit", (e) => {
+form.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (modalReadOnly) return;
   if (hasPendingNoteDraft()) {
@@ -6165,7 +6377,12 @@ form.addEventListener("submit", (e) => {
     openPendingDraftModal("task");
     return;
   }
-  saveDealFromForm();
+  saveBtn.disabled = true;
+  try {
+    await saveDealFromForm();
+  } finally {
+    saveBtn.disabled = false;
+  }
 });
 
 document.querySelectorAll(".modal-tab").forEach((tab) => {
