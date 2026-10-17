@@ -102,6 +102,7 @@ const pipelineRowsEl = document.getElementById("pipelineRows");
 const overlay = document.getElementById("modalOverlay");
 const form = document.getElementById("dealForm");
 const modalTitle = document.getElementById("modalTitle");
+const modalTitleTool = document.getElementById("modalTitleTool");
 const saveBtn = document.getElementById("saveBtn");
 const deleteBtn = document.getElementById("dismissDealBtn");
 const dismissOverlay = document.getElementById("dismissOverlay");
@@ -144,7 +145,11 @@ let commitContractFileName = "";
 const activityNotesEl = document.getElementById("activityNotes");
 const activityNotesOnlyInput = document.getElementById("activityNotesOnly");
 const newNoteInput = document.getElementById("newNoteInput");
+const companyDetailsFields = document.getElementById("companyDetailsFields");
+const companyBriefFields = document.getElementById("companyBriefFields");
+const dealBriefInput = document.getElementById("dealBriefInput");
 const modalPanelDetails = document.getElementById("modalPanelDetails");
+const modalPanelDeal = document.getElementById("modalPanelDeal");
 const modalPanelActivity = document.getElementById("modalPanelActivity");
 const modalPanelTasks = document.getElementById("modalPanelTasks");
 const dealTasksListEl = document.getElementById("dealTasksList");
@@ -778,6 +783,7 @@ async function refreshDealsFromRemote() {
 
 const DEAL_CREATION_NOTE_TEXT = "Deal card created";
 const TASK_COMPLETED_NOTE_KIND = "task-completed";
+const BRIEF_NOTE_KIND = "brief";
 const STAGE_PLACEMENT_NOTE_KIND = "stage";
 const PAUSED_NOTE_KIND = "paused";
 const UNPAUSED_NOTE_KIND = "unpaused";
@@ -869,6 +875,10 @@ function isStagePlacementNote(note) {
 
 function isPauseActivityNote(note) {
   return note?.kind === PAUSED_NOTE_KIND || note?.kind === UNPAUSED_NOTE_KIND;
+}
+
+function isBriefNote(note) {
+  return note?.kind === BRIEF_NOTE_KIND;
 }
 
 function isAutomaticActivityNote(note) {
@@ -4593,10 +4603,58 @@ function serializeModalTasks() {
     .filter((task) => task.text && task.dueAt != null);
 }
 
+function updateModalTitleTool() {
+  const tool = form.elements.tool.value.trim();
+  modalTitleTool.hidden = !tool;
+  modalTitleTool.textContent = tool;
+}
+
+function setCompanyDetailTab(tab) {
+  const brief = tab === "brief";
+  companyDetailsFields.hidden = brief;
+  companyBriefFields.hidden = !brief;
+  document.querySelectorAll(".detail-tab").forEach((button) => {
+    const active = button.dataset.detailTab === (brief ? "brief" : "details");
+    button.classList.toggle("is-active", active);
+    button.setAttribute("aria-selected", active ? "true" : "false");
+  });
+}
+
+function briefNoteText(notes) {
+  return (notes || []).find(isBriefNote)?.text || "";
+}
+
+function syncBriefNote() {
+  const text = dealBriefInput.value.trim();
+  const existing = modalNotes.find(isBriefNote);
+  if (!text) {
+    if (existing) modalNotes = modalNotes.filter((note) => note !== existing);
+    return;
+  }
+  if (existing) {
+    if (existing.text !== text) {
+      existing.text = text;
+      existing.updatedAt = Date.now();
+      existing.updatedBy = stampCurrentUser(existing.createdBy);
+    }
+    return;
+  }
+  modalNotes.push({
+    id: crypto.randomUUID(),
+    kind: BRIEF_NOTE_KIND,
+    text,
+    createdAt: Date.now(),
+    updatedAt: null,
+    createdBy: stampCurrentUser(),
+    updatedBy: "",
+  });
+}
+
 function setModalPanel(panel) {
   modalPanel = panel;
 
   modalPanelDetails.hidden = panel !== "details";
+  modalPanelDeal.hidden = panel !== "deal";
   modalPanelActivity.hidden = panel !== "activity";
   modalPanelTasks.hidden = panel !== "tasks";
 
@@ -4652,7 +4710,8 @@ function resizeActivityNote(textarea) {
 function renderActivityNotes() {
   activityNotesEl.innerHTML = "";
 
-  const sorted = [...modalNotes].sort((a, b) => {
+  const activityEntries = modalNotes.filter((note) => !isBriefNote(note));
+  const sorted = [...activityEntries].sort((a, b) => {
     const aBirth = isDealCreationNote(a) ? 1 : 0;
     const bBirth = isDealCreationNote(b) ? 1 : 0;
     if (aBirth !== bBirth) return aBirth - bBirth;
@@ -4665,7 +4724,7 @@ function renderActivityNotes() {
   if (!visible.length) {
     const empty = document.createElement("p");
     empty.className = "activity-empty";
-    empty.textContent = modalNotes.length
+    empty.textContent = activityEntries.length
       ? "Automatic activity is hidden."
       : "No notes yet. Add the first one below.";
     activityNotesEl.appendChild(empty);
@@ -6031,6 +6090,7 @@ function openModal({
     form.elements.industry.value = deal.industry || "";
     form.elements.tool.value = deal.tool || "";
     form.elements.owner.value = deal.owner || "";
+    dealBriefInput.value = briefNoteText(deal.notes);
 
     const showImplementation =
       deal.stage === "committed" || deal.stage === "paid" || deal.stage === "failed";
@@ -6060,7 +6120,9 @@ function openModal({
     form.elements.contractName.value = "";
     resetDealContractFileState(null);
     form.elements.owner.value = getCurrentUserName();
+    dealBriefInput.value = "";
   }
+  setCompanyDetailTab("details");
 
   newNoteInput.value = "";
   newTaskNameInput.value = "";
@@ -6076,6 +6138,7 @@ function openModal({
     : deal
       ? "Edit deal"
       : "New deal";
+  updateModalTitleTool();
   saveBtn.textContent = deal ? "Save changes" : "Create deal";
   deleteBtn.hidden = !deal;
 
@@ -6278,6 +6341,7 @@ async function confirmPendingDraft() {
 }
 
 async function saveDealFromForm() {
+  syncBriefNote();
   const data = {
     company: toTitleCase(form.elements.company.value),
     contact: toTitleCase(form.elements.contact.value),
@@ -6318,7 +6382,15 @@ async function saveDealFromForm() {
       const startDate = parseDateInput(form.elements.implementationStart.value);
       const days = Number(form.elements.implementationDuration.value);
       const scheduleRequired = deal.stage === "committed";
-      if (scheduleRequired && (!startDate || !days || days < 1)) return;
+      if (scheduleRequired && (!startDate || !days || days < 1)) {
+        setModalPanel("deal");
+        const missing = !startDate
+          ? form.elements.implementationStart
+          : form.elements.implementationDuration;
+        missing.reportValidity();
+        missing.focus();
+        return;
+      }
       if (startDate && days >= 1) {
         deal.committedAt = startDate;
         deal.implementationDays = days;
@@ -6366,9 +6438,45 @@ async function saveDealFromForm() {
   closeModal();
 }
 
+function revealInvalidDealField() {
+  const company = form.elements.company;
+  const email = form.elements.email;
+  const value = form.elements.value;
+  const owner = form.elements.owner;
+
+  if (!company.value.trim() || !company.checkValidity()) {
+    setModalPanel("details");
+    setCompanyDetailTab("details");
+    company.reportValidity();
+    company.focus();
+    return true;
+  }
+  if (email.value && !email.checkValidity()) {
+    setModalPanel("details");
+    setCompanyDetailTab("details");
+    email.reportValidity();
+    email.focus();
+    return true;
+  }
+  if (!value.checkValidity()) {
+    setModalPanel("deal");
+    value.reportValidity();
+    value.focus();
+    return true;
+  }
+  if (!owner.value.trim()) {
+    setModalPanel("deal");
+    owner.reportValidity();
+    owner.focus();
+    return true;
+  }
+  return false;
+}
+
 form.addEventListener("submit", async (e) => {
   e.preventDefault();
   if (modalReadOnly) return;
+  if (revealInvalidDealField()) return;
   if (hasPendingNoteDraft()) {
     openPendingDraftModal("note");
     return;
@@ -6385,8 +6493,16 @@ form.addEventListener("submit", async (e) => {
   }
 });
 
+form.elements.tool.addEventListener("input", updateModalTitleTool);
+
 document.querySelectorAll(".modal-tab").forEach((tab) => {
   tab.addEventListener("click", () => setModalPanel(tab.dataset.modalTab));
+});
+document.querySelectorAll(".detail-tab").forEach((tab) => {
+  tab.addEventListener("click", () => {
+    setCompanyDetailTab(tab.dataset.detailTab);
+    if (tab.dataset.detailTab === "brief" && !modalReadOnly) dealBriefInput.focus();
+  });
 });
 if (activityNotesOnlyInput) {
   activityNotesOnlyInput.checked = activityNotesOnly;

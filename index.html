@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=touch-scroll" />
+  <link rel="stylesheet" href="styles.css?v=no-obsidian" />
 </head>
 <body class="is-logged-out">
 
@@ -418,7 +418,10 @@
   <div class="modal-overlay" id="modalOverlay" hidden>
     <div class="modal" role="dialog" aria-modal="true" aria-labelledby="modalTitle">
       <div class="modal-header">
-        <h2 id="modalTitle">New deal</h2>
+        <div class="modal-title-row">
+          <h2 id="modalTitle">New deal</h2>
+          <span id="modalTitleTool" class="modal-title-tool" hidden></span>
+        </div>
         <button class="icon-btn" id="modalCloseBtn" aria-label="Close">&times;</button>
       </div>
       <form id="dealForm" autocomplete="off">
@@ -433,6 +436,17 @@
             data-modal-tab="details"
           >
             Company details
+          </button>
+          <button
+            type="button"
+            class="modal-tab"
+            role="tab"
+            id="dealTabDeal"
+            aria-selected="false"
+            aria-controls="modalPanelDeal"
+            data-modal-tab="deal"
+          >
+            Deal
           </button>
           <button
             type="button"
@@ -464,7 +478,29 @@
           role="tabpanel"
           aria-labelledby="dealTabDetails"
         >
-          <div class="form-grid">
+          <div class="detail-tabs" role="tablist" aria-label="Company sections">
+            <button
+              type="button"
+              class="detail-tab is-active"
+              role="tab"
+              id="companyTabDetails"
+              aria-selected="true"
+              data-detail-tab="details"
+            >
+              Details
+            </button>
+            <button
+              type="button"
+              class="detail-tab"
+              role="tab"
+              id="companyTabBrief"
+              aria-selected="false"
+              data-detail-tab="brief"
+            >
+              Brief
+            </button>
+          </div>
+          <div class="form-grid" id="companyDetailsFields">
             <label class="field span-2">
               <span class="field-label">Company name</span>
               <div class="combobox">
@@ -494,7 +530,7 @@
               <span class="field-label">Email</span>
               <input type="email" name="email" placeholder="jane@acme.com" />
             </label>
-            <label class="field">
+            <label class="field span-2">
               <span class="field-label">Industry</span>
               <div class="combobox">
                 <input
@@ -510,7 +546,29 @@
                 <ul class="combobox-suggestions" id="industrySuggestions" role="listbox" hidden></ul>
               </div>
             </label>
+          </div>
+          <div id="companyBriefFields" hidden>
             <label class="field">
+              <span class="field-label">Brief</span>
+              <textarea
+                id="dealBriefInput"
+                class="brief-textarea"
+                rows="16"
+                placeholder="Background, context, and anything worth keeping about this company…"
+              ></textarea>
+            </label>
+          </div>
+        </div>
+
+        <div
+          class="modal-panel"
+          id="modalPanelDeal"
+          role="tabpanel"
+          aria-labelledby="dealTabDeal"
+          hidden
+        >
+          <div class="form-grid">
+            <label class="field span-2">
               <span class="field-label">Tool</span>
               <div class="combobox">
                 <input
@@ -617,16 +675,6 @@
               </label>
               <div class="activity-actions">
                 <button type="button" class="btn btn-ghost btn-sm" id="addNoteBtn">Add note</button>
-                <a
-                  class="obsidian-link btn-sm"
-                  href="https://obsidian.md"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  title="Open Obsidian"
-                  aria-label="Open Obsidian website"
-                >
-                  <img src="obsidian.png" alt="" class="obsidian-icon" />
-                </a>
               </div>
             </div>
           </div>
@@ -910,6 +958,6 @@
   <script src="config.js"></script>
   <script src="db.js"></script>
   <script src="auth.js"></script>
-  <script src="app.js?v=task-tip-tool"></script>
+  <script src="app.js?v=title-tool-plain"></script>
 </body>
 </html>
