@@ -35,6 +35,7 @@ let pendingCommitDeal = null; // deal awaiting implementation days before moving
 let openFilterKey = null;
 let activeTab = "board";
 let modalNotes = [];
+let modalMilestones = {};
 let modalTasks = [];
 let modalPanel = "details";
 let syncingFromRemote = false;
@@ -132,6 +133,8 @@ const commitDealName = document.getElementById("commitDealName");
 const implementationFields = document.getElementById("implementationFields");
 const dealContractFileBtn = document.getElementById("dealContractFileBtn");
 const dealContractFileInput = document.getElementById("dealContractFileInput");
+const dealToolFileBtn = document.getElementById("dealToolFileBtn");
+const dealToolFileInput = document.getElementById("dealToolFileInput");
 const commitContractFileBtn = document.getElementById("commitContractFileBtn");
 const commitContractFileInput = document.getElementById("commitContractFileInput");
 
@@ -139,6 +142,9 @@ const commitContractFileInput = document.getElementById("commitContractFileInput
 let modalContractFile = null;
 let modalContractFilePath = "";
 let modalContractFileName = "";
+let modalToolFile = null;
+let modalToolFilePath = "";
+let modalToolFileName = "";
 let commitContractFile = null;
 let commitContractFilePath = "";
 let commitContractFileName = "";
@@ -147,7 +153,10 @@ const activityNotesOnlyInput = document.getElementById("activityNotesOnly");
 const newNoteInput = document.getElementById("newNoteInput");
 const companyDetailsFields = document.getElementById("companyDetailsFields");
 const companyBriefFields = document.getElementById("companyBriefFields");
+const companyHistoryFields = document.getElementById("companyHistoryFields");
 const dealBriefInput = document.getElementById("dealBriefInput");
+const dealValueInput = document.getElementById("dealValueInput");
+const dealMilestonesEl = document.getElementById("dealMilestones");
 const modalPanelDetails = document.getElementById("modalPanelDetails");
 const modalPanelDeal = document.getElementById("modalPanelDeal");
 const modalPanelActivity = document.getElementById("modalPanelActivity");
@@ -784,6 +793,17 @@ async function refreshDealsFromRemote() {
 const DEAL_CREATION_NOTE_TEXT = "Deal card created";
 const TASK_COMPLETED_NOTE_KIND = "task-completed";
 const BRIEF_NOTE_KIND = "brief";
+const VALUE_NOTE_KIND = "value-propositions";
+const MILESTONE_NOTE_KIND = "milestones";
+const TOOL_FILE_NOTE_KIND = "tool-file";
+const DEAL_MILESTONES = [
+  { id: "quoted", label: "Quoted" },
+  { id: "contractSigned", label: "Contract signed" },
+  { id: "proformaPaid", label: "Proforma paid" },
+  { id: "invoicePaid", label: "Invoice paid" },
+];
+const CARD_PROGRESS_STEPS = 4;
+const PROGRESS_STAGES = new Set(["interested", "committed", "paid", "failed"]);
 const STAGE_PLACEMENT_NOTE_KIND = "stage";
 const PAUSED_NOTE_KIND = "paused";
 const UNPAUSED_NOTE_KIND = "unpaused";
@@ -879,6 +899,84 @@ function isPauseActivityNote(note) {
 
 function isBriefNote(note) {
   return note?.kind === BRIEF_NOTE_KIND;
+}
+
+function isValueNote(note) {
+  return note?.kind === VALUE_NOTE_KIND;
+}
+
+function isMilestoneNote(note) {
+  return note?.kind === MILESTONE_NOTE_KIND;
+}
+
+function isToolFileNote(note) {
+  return note?.kind === TOOL_FILE_NOTE_KIND;
+}
+
+function toolFileFromNotes(notes) {
+  const note = (notes || []).find(isToolFileNote);
+  if (!note?.text) return { path: "", fileName: "" };
+  try {
+    const data = JSON.parse(note.text);
+    return {
+      path: String(data?.path || ""),
+      fileName: String(data?.fileName || ""),
+    };
+  } catch {
+    return { path: "", fileName: "" };
+  }
+}
+
+function syncToolFileNote(path, fileName) {
+  const existing = modalNotes.find(isToolFileNote);
+  if (!path && !fileName) {
+    if (existing) modalNotes = modalNotes.filter((note) => note !== existing);
+    return;
+  }
+  const text = JSON.stringify({ path: path || "", fileName: fileName || "" });
+  if (existing) {
+    if (existing.text !== text) {
+      existing.text = text;
+      existing.updatedAt = Date.now();
+      existing.updatedBy = stampCurrentUser(existing.createdBy);
+    }
+    return;
+  }
+  modalNotes.push({
+    id: crypto.randomUUID(),
+    kind: TOOL_FILE_NOTE_KIND,
+    text,
+    createdAt: Date.now(),
+    updatedAt: null,
+    createdBy: stampCurrentUser(),
+    updatedBy: "",
+  });
+}
+
+function emptyMilestones() {
+  return Object.fromEntries(DEAL_MILESTONES.map((milestone) => [milestone.id, false]));
+}
+
+function milestonesFromNotes(notes) {
+  const flags = emptyMilestones();
+  const note = (notes || []).find(isMilestoneNote);
+  if (!note?.text) return flags;
+  try {
+    const data = JSON.parse(note.text);
+    for (const milestone of DEAL_MILESTONES) flags[milestone.id] = Boolean(data?.[milestone.id]);
+  } catch {
+    /* keep every stage off if the stored value is unreadable */
+  }
+  return flags;
+}
+
+function dealShowsProgress(deal) {
+  return PROGRESS_STAGES.has(deal?.stage) && !isDealPaused(deal);
+}
+
+function dealProgressFilled(deal) {
+  const flags = milestonesFromNotes(deal?.notes);
+  return DEAL_MILESTONES.filter((milestone) => flags[milestone.id]).length;
 }
 
 function isAutomaticActivityNote(note) {
@@ -1464,6 +1562,7 @@ function selectFieldSuggestion(fieldKey, name) {
   state.input.value = name;
   closeFieldSuggestions(fieldKey);
   state.input.focus();
+  if (fieldKey === "company") renderCompanyHistory();
 }
 
 function highlightFieldSuggestion(fieldKey, index) {
@@ -3005,6 +3104,32 @@ function renderCard(deal) {
   if (isDealPaused(deal)) card.classList.add("is-paused");
   if (isDealPinned(deal)) card.classList.add("is-pinned");
 
+  if (dealShowsProgress(deal)) {
+    card.classList.add("has-progress");
+    const filled = dealProgressFilled(deal);
+    const flags = milestonesFromNotes(deal.notes);
+    const doneLabels = DEAL_MILESTONES.filter((milestone) => flags[milestone.id]).map(
+      (milestone) => milestone.label
+    );
+    const progress = document.createElement("div");
+    progress.className = "card-progress";
+    progress.setAttribute("role", "img");
+    progress.setAttribute(
+      "aria-label",
+      doneLabels.length
+        ? `${filled} of ${CARD_PROGRESS_STEPS} stages complete: ${doneLabels.join(", ")}`
+        : `0 of ${CARD_PROGRESS_STEPS} stages complete`
+    );
+    progress.title = progress.getAttribute("aria-label");
+    for (let i = 0; i < CARD_PROGRESS_STEPS; i += 1) {
+      const segment = document.createElement("span");
+      segment.className = "card-progress-seg";
+      if (i < filled) segment.classList.add("is-done");
+      progress.appendChild(segment);
+    }
+    card.appendChild(progress);
+  }
+
   const pinBtn = document.createElement("button");
   pinBtn.type = "button";
   pinBtn.className = "card-pin-btn";
@@ -4170,17 +4295,51 @@ function hasImplementationSchedule(deal) {
   return Boolean(deal?.committedAt) && Number(deal?.implementationDays) > 0;
 }
 
-function syncContractFileButton(btn, { fileName = "", path = "", pendingFile = null } = {}) {
+function syncAttachedFileButton(btn, {
+  fileName = "",
+  path = "",
+  pendingFile = null,
+  emptyLabel = "Upload file",
+  emptyTitle = "Upload file",
+  openNoun = "file",
+} = {}) {
   if (!btn) return;
   const attached = Boolean(pendingFile || path || fileName);
   btn.classList.toggle("is-attached", attached);
   const label = attached
-    ? `Open contract${fileName ? ` (${fileName})` : ""}`
-    : "Upload contract file";
+    ? `Open ${openNoun}${fileName ? ` (${fileName})` : ""}`
+    : emptyLabel;
   btn.setAttribute("aria-label", label);
-  btn.title = attached
-    ? `${label}. Shift-click to replace.`
-    : "Upload contract file (PDF or Word)";
+  btn.title = attached ? `${label}. Shift-click to replace.` : emptyTitle;
+}
+
+function syncContractFileButton(btn, details = {}) {
+  syncAttachedFileButton(btn, {
+    ...details,
+    emptyLabel: "Upload contract file",
+    emptyTitle: "Upload contract file (PDF or Word)",
+    openNoun: "contract",
+  });
+}
+
+function syncToolFileButton() {
+  syncAttachedFileButton(dealToolFileBtn, {
+    fileName: modalToolFileName,
+    path: modalToolFilePath,
+    pendingFile: modalToolFile,
+    emptyLabel: "Upload document",
+    emptyTitle: "Upload document (PDF or Word)",
+    openNoun: "document",
+  });
+}
+
+function resetDealToolFileState(deal = null) {
+  const stored = toolFileFromNotes(deal?.notes);
+  modalToolFile = null;
+  modalToolFilePath = stored.path;
+  modalToolFileName = stored.fileName;
+  if (dealToolFileInput) dealToolFileInput.value = "";
+  syncToolFileButton();
 }
 
 function resetDealContractFileState(deal = null) {
@@ -4207,7 +4366,7 @@ function resetCommitContractFileState(deal = null) {
   });
 }
 
-async function openContractPreview({ pendingFile = null, path = "", fileName = "" } = {}) {
+async function openContractPreview({ pendingFile = null, path = "", fileName = "", noun = "contract" } = {}) {
   if (pendingFile) {
     const url = URL.createObjectURL(pendingFile);
     window.open(url, "_blank", "noopener,noreferrer");
@@ -4217,8 +4376,9 @@ async function openContractPreview({ pendingFile = null, path = "", fileName = "
   }
   if (!path) return;
   const api = window.MHN_DB;
+  const title = noun.charAt(0).toUpperCase() + noun.slice(1);
   if (!api?.getContractFilePreviewUrl) {
-    showSyncStatus("Contract preview unavailable offline", true, true);
+    showSyncStatus(`${title} preview unavailable offline`, true, true);
     return;
   }
   try {
@@ -4228,23 +4388,23 @@ async function openContractPreview({ pendingFile = null, path = "", fileName = "
   } catch (err) {
     console.error(err);
     showSyncStatus(
-      `Could not open contract${fileName ? ` “${fileName}”` : ""}${syncErrorDetail(err)}`,
+      `Could not open ${noun}${fileName ? ` “${fileName}”` : ""}${syncErrorDetail(err)}`,
       true,
       true
     );
   }
 }
 
-async function ensureContractFileUploaded(dealId, { pendingFile, path, fileName }) {
+async function ensureContractFileUploaded(dealId, { pendingFile, path, fileName, label = "Contract" }) {
   if (!pendingFile) {
     return { path: path || "", fileName: fileName || "" };
   }
   const api = window.MHN_DB;
   if (!api?.uploadContractFile) {
-    throw new Error("Contract upload unavailable");
+    throw new Error(`${label} upload unavailable`);
   }
   if (!api.cloudWriteEnabled) {
-    throw new Error("Contract upload needs the deployed app while signed in");
+    throw new Error(`${label} upload needs the deployed app while signed in`);
   }
   const previousPath = path || "";
   const uploaded = await api.uploadContractFile(dealId, pendingFile);
@@ -4325,6 +4485,12 @@ function acceptContractFile(file, mode) {
     });
     return;
   }
+  if (mode === "tool") {
+    modalToolFile = file;
+    modalToolFileName = file.name;
+    syncToolFileButton();
+    return;
+  }
   modalContractFile = file;
   modalContractFileName = file.name;
   syncContractFileButton(dealContractFileBtn, {
@@ -4365,6 +4531,29 @@ dealContractFileInput?.addEventListener("change", () => {
   const file = dealContractFileInput.files?.[0];
   if (file) acceptContractFile(file, "deal");
   dealContractFileInput.value = "";
+});
+
+dealToolFileBtn?.addEventListener("click", (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+  const hasFile = Boolean(modalToolFile || modalToolFilePath);
+  if (hasFile && (modalReadOnly || !e.shiftKey)) {
+    openContractPreview({
+      pendingFile: modalToolFile,
+      path: modalToolFilePath,
+      fileName: modalToolFileName,
+      noun: "document",
+    });
+    return;
+  }
+  if (modalReadOnly) return;
+  dealToolFileInput?.click();
+});
+
+dealToolFileInput?.addEventListener("change", () => {
+  const file = dealToolFileInput.files?.[0];
+  if (file) acceptContractFile(file, "tool");
+  dealToolFileInput.value = "";
 });
 
 commitContractFileInput?.addEventListener("change", () => {
@@ -4609,28 +4798,124 @@ function updateModalTitleTool() {
   modalTitleTool.textContent = tool;
 }
 
+function companyHistoryStageLabel(deal) {
+  if (deal?.stage === "dismissed" || deal?.dismissedAt) return "Dismissed";
+  if (isDealPaused(deal)) return "Paused";
+  return STAGES.find((stage) => stage.id === deal?.stage)?.label || "Prospects";
+}
+
+function renderCompanyHistoryItem(deal) {
+  const current = deal.id === editingId;
+  const item = document.createElement("button");
+  item.type = "button";
+  item.className = "company-history-item";
+  if (current) item.classList.add("is-current");
+
+  const title = document.createElement("p");
+  title.className = "company-history-title";
+  const stage = document.createElement("span");
+  stage.textContent = companyHistoryStageLabel(deal);
+  title.append(stage);
+  if (current) {
+    const badge = document.createElement("span");
+    badge.className = "company-history-current";
+    badge.textContent = "This deal";
+    title.append(badge);
+  }
+
+  const detail = document.createElement("p");
+  detail.className = "company-history-detail";
+  detail.textContent = [
+    deal.tool || "No tool",
+    deal.owner,
+    fmtEuro.format(Number(deal.value) || 0),
+    deal.createdAt ? formatShortDate(deal.createdAt) : "",
+  ]
+    .filter(Boolean)
+    .join(" · ");
+
+  item.append(title, detail);
+  if (!current) {
+    item.addEventListener("click", () => {
+      const fresh = deals.find((entry) => entry.id === deal.id) || deal;
+      const readOnly = fresh.stage === "dismissed" || Boolean(fresh.dismissedAt);
+      openModal({ deal: fresh, readOnly });
+      setCompanyDetailTab("history");
+    });
+  }
+  return item;
+}
+
+function renderCompanyHistory() {
+  if (!companyHistoryFields) return;
+  companyHistoryFields.innerHTML = "";
+  const key = normalizeCompanyKey(form.elements.company.value);
+  if (!key) {
+    const empty = document.createElement("p");
+    empty.className = "company-history-empty";
+    empty.textContent = "Enter a company name to see its deals.";
+    companyHistoryFields.append(empty);
+    return;
+  }
+
+  const matches = deals
+    .filter((deal) => normalizeCompanyKey(deal.company) === key)
+    .sort((a, b) => (b.createdAt || 0) - (a.createdAt || 0));
+
+  if (!matches.length) {
+    const empty = document.createElement("p");
+    empty.className = "company-history-empty";
+    empty.textContent = "No deals for this company yet.";
+    companyHistoryFields.append(empty);
+    return;
+  }
+
+  for (const deal of matches) {
+    companyHistoryFields.append(renderCompanyHistoryItem(deal));
+  }
+}
+
 function setCompanyDetailTab(tab) {
-  const brief = tab === "brief";
-  companyDetailsFields.hidden = brief;
-  companyBriefFields.hidden = !brief;
+  const next = tab === "brief" || tab === "history" ? tab : "details";
+  companyDetailsFields.hidden = next !== "details";
+  companyBriefFields.hidden = next !== "brief";
+  companyHistoryFields.hidden = next !== "history";
   document.querySelectorAll(".detail-tab").forEach((button) => {
-    const active = button.dataset.detailTab === (brief ? "brief" : "details");
+    const active = button.dataset.detailTab === next;
     button.classList.toggle("is-active", active);
     button.setAttribute("aria-selected", active ? "true" : "false");
   });
+  if (next === "history") renderCompanyHistory();
 }
 
 function briefNoteText(notes) {
   return (notes || []).find(isBriefNote)?.text || "";
 }
 
-function syncBriefNote() {
-  const text = dealBriefInput.value.trim();
-  const existing = modalNotes.find(isBriefNote);
-  if (!text) {
+function valueNoteText(notes) {
+  return (notes || []).find(isValueNote)?.text || "";
+}
+
+function renderDealMilestones() {
+  if (!dealMilestonesEl) return;
+  for (const button of dealMilestonesEl.querySelectorAll(".deal-milestone")) {
+    const on = Boolean(modalMilestones[button.dataset.milestone]);
+    button.classList.toggle("is-on", on);
+    button.setAttribute("aria-pressed", on ? "true" : "false");
+    button.disabled = modalReadOnly;
+  }
+}
+
+function syncMilestonesNote() {
+  const flags = emptyMilestones();
+  for (const milestone of DEAL_MILESTONES) flags[milestone.id] = Boolean(modalMilestones[milestone.id]);
+  const any = DEAL_MILESTONES.some((milestone) => flags[milestone.id]);
+  const existing = modalNotes.find(isMilestoneNote);
+  if (!any) {
     if (existing) modalNotes = modalNotes.filter((note) => note !== existing);
     return;
   }
+  const text = JSON.stringify(flags);
   if (existing) {
     if (existing.text !== text) {
       existing.text = text;
@@ -4641,13 +4926,47 @@ function syncBriefNote() {
   }
   modalNotes.push({
     id: crypto.randomUUID(),
-    kind: BRIEF_NOTE_KIND,
+    kind: MILESTONE_NOTE_KIND,
     text,
     createdAt: Date.now(),
     updatedAt: null,
     createdBy: stampCurrentUser(),
     updatedBy: "",
   });
+}
+
+function syncKindNote(kind, text) {
+  const trimmed = String(text || "").trim();
+  const existing = modalNotes.find((note) => note?.kind === kind);
+  if (!trimmed) {
+    if (existing) modalNotes = modalNotes.filter((note) => note !== existing);
+    return;
+  }
+  if (existing) {
+    if (existing.text !== trimmed) {
+      existing.text = trimmed;
+      existing.updatedAt = Date.now();
+      existing.updatedBy = stampCurrentUser(existing.createdBy);
+    }
+    return;
+  }
+  modalNotes.push({
+    id: crypto.randomUUID(),
+    kind,
+    text: trimmed,
+    createdAt: Date.now(),
+    updatedAt: null,
+    createdBy: stampCurrentUser(),
+    updatedBy: "",
+  });
+}
+
+function syncBriefNote() {
+  syncKindNote(BRIEF_NOTE_KIND, dealBriefInput.value);
+}
+
+function syncValueNote() {
+  syncKindNote(VALUE_NOTE_KIND, dealValueInput.value);
 }
 
 function setModalPanel(panel) {
@@ -4710,7 +5029,13 @@ function resizeActivityNote(textarea) {
 function renderActivityNotes() {
   activityNotesEl.innerHTML = "";
 
-  const activityEntries = modalNotes.filter((note) => !isBriefNote(note));
+  const activityEntries = modalNotes.filter(
+    (note) =>
+      !isBriefNote(note) &&
+      !isValueNote(note) &&
+      !isMilestoneNote(note) &&
+      !isToolFileNote(note)
+  );
   const sorted = [...activityEntries].sort((a, b) => {
     const aBirth = isDealCreationNote(a) ? 1 : 0;
     const bBirth = isDealCreationNote(b) ? 1 : 0;
@@ -6074,6 +6399,7 @@ function openModal({
   modalNotes = deal
     ? (deal.notes || []).map((note) => ({ ...note }))
     : [];
+  modalMilestones = milestonesFromNotes(modalNotes);
   modalTasks = deal
     ? (deal.tasks || []).map((task) => normalizeTask(task))
     : [];
@@ -6091,6 +6417,7 @@ function openModal({
     form.elements.tool.value = deal.tool || "";
     form.elements.owner.value = deal.owner || "";
     dealBriefInput.value = briefNoteText(deal.notes);
+    dealValueInput.value = valueNoteText(deal.notes);
 
     const showImplementation =
       deal.stage === "committed" || deal.stage === "paid" || deal.stage === "failed";
@@ -6121,7 +6448,9 @@ function openModal({
     resetDealContractFileState(null);
     form.elements.owner.value = getCurrentUserName();
     dealBriefInput.value = "";
+    dealValueInput.value = "";
   }
+  resetDealToolFileState(deal);
   setCompanyDetailTab("details");
 
   newNoteInput.value = "";
@@ -6183,7 +6512,9 @@ function applyModalReadOnly(isReadOnly) {
     // Keep preview available in read-only; only block choosing a new file.
     dealContractFileBtn.disabled = false;
   }
+  if (dealToolFileBtn) dealToolFileBtn.disabled = false;
   mountComposerTaskTypePicker();
+  renderDealMilestones();
   cancelBtn.textContent = isReadOnly ? "Close" : "Cancel";
 }
 
@@ -6195,8 +6526,10 @@ function closeModal() {
   modalReadOnly = false;
   applyModalReadOnly(false);
   modalNotes = [];
+  modalMilestones = emptyMilestones();
   modalTasks = [];
   resetDealContractFileState(null);
+  resetDealToolFileState(null);
   newNoteInput.value = "";
   newTaskNameInput.value = "";
   newTaskDueInput.value = "";
@@ -6341,7 +6674,45 @@ async function confirmPendingDraft() {
 }
 
 async function saveDealFromForm() {
+  if (editingId) {
+    const existing = deals.find((d) => d.id === editingId);
+    if (existing?.stage === "committed") {
+      const startDate = parseDateInput(form.elements.implementationStart.value);
+      const days = Number(form.elements.implementationDuration.value);
+      if (!startDate || !days || days < 1) {
+        setModalPanel("deal");
+        const missing = !startDate
+          ? form.elements.implementationStart
+          : form.elements.implementationDuration;
+        missing.reportValidity();
+        missing.focus();
+        return;
+      }
+    }
+  }
+
+  const fileDealId = editingId || crypto.randomUUID();
+  try {
+    const uploaded = await ensureContractFileUploaded(fileDealId, {
+      pendingFile: modalToolFile,
+      path: modalToolFilePath,
+      fileName: modalToolFileName,
+      label: "Document",
+    });
+    modalToolFile = null;
+    modalToolFilePath = uploaded.path;
+    modalToolFileName = uploaded.fileName;
+    syncToolFileNote(uploaded.path, uploaded.fileName);
+    syncToolFileButton();
+  } catch (err) {
+    console.error(err);
+    showSyncStatus(`Could not save document${syncErrorDetail(err)}`, true, true);
+    return;
+  }
+
   syncBriefNote();
+  syncValueNote();
+  syncMilestonesNote();
   const data = {
     company: toTitleCase(form.elements.company.value),
     contact: toTitleCase(form.elements.contact.value),
@@ -6414,7 +6785,7 @@ async function saveDealFromForm() {
   } else {
     const createdAt = Date.now();
     const newDeal = {
-      id: crypto.randomUUID(),
+      id: fileDealId,
       stage: createStage,
       createdAt,
       ...data,
@@ -6494,10 +6865,23 @@ form.addEventListener("submit", async (e) => {
 });
 
 form.elements.tool.addEventListener("input", updateModalTitleTool);
+form.elements.company.addEventListener("input", () => {
+  if (!companyHistoryFields.hidden) renderCompanyHistory();
+});
 
 document.querySelectorAll(".modal-tab").forEach((tab) => {
   tab.addEventListener("click", () => setModalPanel(tab.dataset.modalTab));
 });
+dealMilestonesEl?.querySelectorAll(".deal-milestone").forEach((button) => {
+  button.addEventListener("click", () => {
+    if (modalReadOnly) return;
+    const id = button.dataset.milestone;
+    if (!DEAL_MILESTONES.some((milestone) => milestone.id === id)) return;
+    modalMilestones[id] = !modalMilestones[id];
+    renderDealMilestones();
+  });
+});
+
 document.querySelectorAll(".detail-tab").forEach((tab) => {
   tab.addEventListener("click", () => {
     setCompanyDetailTab(tab.dataset.detailTab);

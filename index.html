@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=no-obsidian" />
+  <link rel="stylesheet" href="styles.css?v=company-summary" />
 </head>
 <body class="is-logged-out">
 
@@ -435,7 +435,7 @@
             aria-controls="modalPanelDetails"
             data-modal-tab="details"
           >
-            Company details
+            Company
           </button>
           <button
             type="button"
@@ -499,6 +499,16 @@
             >
               Brief
             </button>
+            <button
+              type="button"
+              class="detail-tab"
+              role="tab"
+              id="companyTabHistory"
+              aria-selected="false"
+              data-detail-tab="history"
+            >
+              Deal history
+            </button>
           </div>
           <div class="form-grid" id="companyDetailsFields">
             <label class="field span-2">
@@ -547,14 +557,24 @@
               </div>
             </label>
           </div>
-          <div id="companyBriefFields" hidden>
+          <div id="companyHistoryFields" class="company-history" hidden></div>
+          <div id="companyBriefFields" class="company-brief-fields" hidden>
             <label class="field">
-              <span class="field-label">Brief</span>
+              <span class="field-label">Summary</span>
               <textarea
                 id="dealBriefInput"
                 class="brief-textarea"
-                rows="16"
+                rows="8"
                 placeholder="Background, context, and anything worth keeping about this company…"
+              ></textarea>
+            </label>
+            <label class="field">
+              <span class="field-label">Value propositions</span>
+              <textarea
+                id="dealValueInput"
+                class="brief-textarea"
+                rows="8"
+                placeholder="Benefits, outcomes, and why this deal matters…"
               ></textarea>
             </label>
           </div>
@@ -567,10 +587,28 @@
           aria-labelledby="dealTabDeal"
           hidden
         >
+          <div class="deal-milestones" id="dealMilestones" role="group" aria-label="Deal stages">
+            <button type="button" class="deal-milestone" data-milestone="quoted" aria-pressed="false">
+              <span class="deal-milestone-check" aria-hidden="true"></span>
+              <span>Quoted</span>
+            </button>
+            <button type="button" class="deal-milestone" data-milestone="contractSigned" aria-pressed="false">
+              <span class="deal-milestone-check" aria-hidden="true"></span>
+              <span>Contract signed</span>
+            </button>
+            <button type="button" class="deal-milestone" data-milestone="proformaPaid" aria-pressed="false">
+              <span class="deal-milestone-check" aria-hidden="true"></span>
+              <span>Proforma paid</span>
+            </button>
+            <button type="button" class="deal-milestone" data-milestone="invoicePaid" aria-pressed="false">
+              <span class="deal-milestone-check" aria-hidden="true"></span>
+              <span>Invoice paid</span>
+            </button>
+          </div>
           <div class="form-grid">
-            <label class="field span-2">
+            <div class="field span-2">
               <span class="field-label">Tool</span>
-              <div class="combobox">
+              <div class="combobox input-with-action">
                 <input
                   type="text"
                   name="tool"
@@ -581,9 +619,29 @@
                   aria-expanded="false"
                   aria-controls="toolSuggestions"
                 />
+                <button
+                  type="button"
+                  class="field-file-btn"
+                  id="dealToolFileBtn"
+                  aria-label="Upload document"
+                  title="Upload document"
+                >
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                    <path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8l-5-5Z" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                    <path d="M14 3v5h5" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round"/>
+                    <path d="M9 13h6M9 17h4" stroke="currentColor" stroke-width="1.7" stroke-linecap="round"/>
+                  </svg>
+                </button>
+                <input
+                  type="file"
+                  id="dealToolFileInput"
+                  class="field-file-input"
+                  accept=".pdf,application/pdf,.doc,.docx,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                  hidden
+                />
                 <ul class="combobox-suggestions" id="toolSuggestions" role="listbox" hidden></ul>
               </div>
-            </label>
+            </div>
             <label class="field">
               <span class="field-label">Sales value (€)</span>
               <input type="number" name="value" min="0" step="100" value="10000" required />
@@ -958,6 +1016,6 @@
   <script src="config.js"></script>
   <script src="db.js"></script>
   <script src="auth.js"></script>
-  <script src="app.js?v=title-tool-plain"></script>
+  <script src="app.js?v=company-summary"></script>
 </body>
 </html>

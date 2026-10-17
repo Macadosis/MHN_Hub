@@ -1336,6 +1336,35 @@ body.is-card-dragging .card {
   cursor: grabbing;
 }
 
+.card.has-progress .card-pin-btn {
+  top: 23px;
+}
+
+.card.has-progress .card-pause-btn {
+  top: 21px;
+}
+
+.card-progress {
+  display: flex;
+  margin: 0 0 10px;
+}
+
+.card-progress-seg {
+  flex: 1;
+  height: 4px;
+  margin-left: -2px;
+  background: #e4e1d8;
+  clip-path: polygon(4px 0, 100% 0, calc(100% - 4px) 100%, 0 100%);
+}
+
+.card-progress-seg:first-child {
+  margin-left: 0;
+}
+
+.card-progress-seg.is-done {
+  background: #6b6860;
+}
+
 .card-company {
   display: flex;
   align-items: baseline;
@@ -3346,6 +3375,72 @@ body.is-card-dragging .card {
   display: none;
 }
 
+.deal-milestones {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px 18px;
+  margin: 0 0 18px;
+}
+
+.deal-milestone {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  border: none;
+  background: transparent;
+  padding: 0;
+  font-family: var(--font-sans);
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: #8a877e;
+  cursor: pointer;
+}
+
+.deal-milestone-check {
+  width: 16px;
+  height: 16px;
+  border: 1.5px solid #c9c6bc;
+  border-radius: 4px;
+  background: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.deal-milestone-check::after {
+  content: "";
+  width: 4px;
+  height: 7px;
+  border: solid #fff;
+  border-width: 0 1.6px 1.6px 0;
+  transform: translateY(-1px) rotate(45deg);
+  opacity: 0;
+}
+
+.deal-milestone.is-on {
+  color: #5c5954;
+}
+
+.deal-milestone.is-on .deal-milestone-check {
+  background: #6b6860;
+  border-color: #6b6860;
+}
+
+.deal-milestone.is-on .deal-milestone-check::after {
+  opacity: 1;
+}
+
+.deal-milestone:hover:not(:disabled) .deal-milestone-check {
+  border-color: #6b6860;
+}
+
+.deal-milestone:disabled {
+  cursor: default;
+}
+
 .detail-tabs {
   display: flex;
   gap: 16px;
@@ -3376,9 +3471,19 @@ body.is-card-dragging .card {
   border-bottom-color: var(--accent);
 }
 
+.company-brief-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.company-brief-fields[hidden] {
+  display: none;
+}
+
 .brief-textarea {
   width: 100%;
-  min-height: min(420px, 52vh);
+  min-height: min(220px, 32vh);
   resize: vertical;
   font-family: var(--font-sans);
   font-size: 14px;
@@ -3394,6 +3499,74 @@ body.is-card-dragging .card {
 .brief-textarea:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.company-history {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: min(420px, 52vh);
+  overflow-y: auto;
+}
+
+.company-history[hidden] {
+  display: none;
+}
+
+.company-history-empty {
+  margin: 0;
+  padding: 12px 0;
+  font-size: 13px;
+  color: var(--ink-faint);
+}
+
+.company-history-item {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  width: 100%;
+  padding: 12px 14px;
+  text-align: left;
+  font-family: var(--font-sans);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  cursor: pointer;
+}
+
+.company-history-item:hover {
+  border-color: #cfccbf;
+}
+
+.company-history-item.is-current {
+  cursor: default;
+  background: var(--bg-sunken);
+}
+
+.company-history-title {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.company-history-current {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+}
+
+.company-history-detail {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--ink-soft);
 }
 
 .activity-log {
@@ -3944,6 +4117,14 @@ body.is-card-dragging .card {
 .combobox input:focus {
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.combobox.input-with-action input {
+  padding-right: 42px;
+}
+
+.combobox .field-file-btn {
+  z-index: 2;
 }
 
 .combobox-suggestions {
