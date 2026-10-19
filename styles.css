@@ -5413,7 +5413,7 @@ body.is-card-dragging .card {
 }
 
 .knowledge-table {
-  width: 1120px;
+  width: 1216px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 14px;
@@ -5455,6 +5455,7 @@ body.is-card-dragging .card {
 .knowledge-col-web { width: 180px; }
 .knowledge-col-founded { width: 76px; }
 .knowledge-col-size { width: 88px; }
+.knowledge-col-revenue { width: 96px; }
 .knowledge-col-valuation { width: 96px; }
 .knowledge-col-origin { width: 156px; }
 .knowledge-col-market { width: 96px; }

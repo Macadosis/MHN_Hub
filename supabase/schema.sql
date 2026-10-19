@@ -140,6 +140,7 @@ create table if not exists public.knowledge (
   founded text not null default '',
   size text not null default '',
   valuation text not null default '',
+  revenue text not null default '',
   origin text not null default '',
   market text not null default '',
   owners text not null default '',
@@ -149,6 +150,7 @@ create table if not exists public.knowledge (
 );
 
 alter table public.knowledge add column if not exists owners text not null default '';
+alter table public.knowledge add column if not exists revenue text not null default '';
 
 alter table public.knowledge enable row level security;
 
