@@ -5413,7 +5413,7 @@ body.is-card-dragging .card {
 }
 
 .knowledge-table {
-  width: 1000px;
+  width: 1120px;
   border-collapse: separate;
   border-spacing: 0;
   font-size: 14px;
@@ -5452,13 +5452,13 @@ body.is-card-dragging .card {
   background: var(--bg);
 }
 
-.knowledge-col-web { width: 148px; }
+.knowledge-col-web { width: 180px; }
 .knowledge-col-founded { width: 76px; }
 .knowledge-col-size { width: 88px; }
 .knowledge-col-valuation { width: 96px; }
-.knowledge-col-origin { width: 120px; }
+.knowledge-col-origin { width: 156px; }
 .knowledge-col-market { width: 96px; }
-.knowledge-col-owners { width: 288px; }
+.knowledge-col-owners { width: 340px; }
 
 .knowledge-web {
   display: flex;
@@ -5503,10 +5503,19 @@ body.is-card-dragging .card {
   display: flex;
   flex-wrap: nowrap;
   align-items: center;
-  gap: 4px;
+  gap: 2px;
   min-height: 40px;
   min-width: 0;
-  padding: 6px 8px;
+  padding: 6px 4px 6px 8px;
+}
+
+.knowledge-owner-names {
+  display: flex;
+  flex: 1 1 auto;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
   overflow: hidden;
 }
 
@@ -5516,7 +5525,7 @@ body.is-card-dragging .card {
   flex: 0 1 auto;
   min-width: 0;
   max-width: 100%;
-  padding: 1px 1px 1px 8px;
+  padding: 2px 8px;
   border-radius: 999px;
   background: var(--bg-sunken);
 }
@@ -5551,11 +5560,6 @@ body.is-card-dragging .card {
   color: var(--danger);
 }
 
-.knowledge-owner-add {
-  border: 1px solid var(--line);
-  border-radius: 999px;
-}
-
 .knowledge-inline-icon {
   width: 13px;
   height: 13px;
@@ -5567,13 +5571,45 @@ body.is-card-dragging .card {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  width: 240px;
+  width: 280px;
+  max-height: min(440px, calc(100vh - 16px));
   margin: 0;
   padding: 12px;
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: var(--radius-md);
   box-shadow: var(--shadow-lift);
+}
+
+.knowledge-owner-form-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 0;
+  overflow: auto;
+}
+
+.knowledge-owner-form-person {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.knowledge-owner-form-person + .knowledge-owner-form-person {
+  padding-top: 10px;
+  border-top: 1px solid var(--line);
+}
+
+.knowledge-owner-form-name {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.knowledge-owner-form-name .knowledge-owner-input {
+  flex: 1;
+  min-width: 0;
 }
 
 .knowledge-owner-input {
@@ -5603,6 +5639,7 @@ body.is-card-dragging .card {
 
 .knowledge-owner-form-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
@@ -5700,8 +5737,13 @@ body.is-card-dragging .card {
 .knowledge-notes {
   display: block;
   width: 100%;
-  min-height: 88px;
-  resize: vertical;
+  min-height: 0;
+  height: auto;
+  resize: none;
+  overflow: hidden;
+  field-sizing: content;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
   font-family: var(--font-sans);
   font-size: 14px;
   line-height: 1.45;

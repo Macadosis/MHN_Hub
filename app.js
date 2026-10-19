@@ -8432,6 +8432,13 @@ function deleteKnowledgeEntry(id) {
   renderKnowledge();
 }
 
+function fitKnowledgeNotes(textarea) {
+  if (!textarea) return;
+  textarea.style.height = "auto";
+  const border = textarea.offsetHeight - textarea.clientHeight;
+  textarea.style.height = `${textarea.scrollHeight + border}px`;
+}
+
 function touchKnowledgeEntry(entry) {
   entry.updatedAt = new Date().toISOString();
   window.MHN_DB?.saveKnowledgeLocal?.(knowledgeEntries);
@@ -8482,47 +8489,32 @@ function renderKnowledgeOwnersCell(td, row) {
   const people = knowledgeOwnerList(row.owners);
   const wrap = document.createElement("div");
   wrap.className = "knowledge-owners";
-  people.forEach((owner, index) => {
+  const names = document.createElement("div");
+  names.className = "knowledge-owner-names";
+  people.forEach((owner) => {
     const chip = document.createElement("span");
     chip.className = "knowledge-owner";
     const href = knowledgeLinkUrl(owner.url);
     const name = href ? document.createElement("a") : document.createElement("span");
     name.className = href ? "knowledge-owner-link" : "knowledge-owner-name";
     name.textContent = owner.name;
+    name.title = href || owner.name;
     if (href) {
       name.href = href;
       name.target = "_blank";
       name.rel = "noopener noreferrer";
-      name.title = href;
     }
-    const editBtn = document.createElement("button");
-    editBtn.type = "button";
-    editBtn.className = "knowledge-inline-btn";
-    editBtn.dataset.knowledgeAction = "owner-edit";
-    editBtn.dataset.knowledgeId = row.id;
-    editBtn.dataset.ownerIndex = String(index);
-    editBtn.setAttribute("aria-label", `Edit ${owner.name}`);
-    editBtn.appendChild(knowledgeIcon("M11.2 2.6a1.5 1.5 0 0 1 2.1 2.1L5.7 12.3 2.6 13.4l1.1-3.1 7.5-7.7z", "knowledge-inline-icon"));
-    const removeBtn = document.createElement("button");
-    removeBtn.type = "button";
-    removeBtn.className = "knowledge-inline-btn knowledge-owner-remove";
-    removeBtn.dataset.knowledgeAction = "owner-remove";
-    removeBtn.dataset.knowledgeId = row.id;
-    removeBtn.dataset.ownerIndex = String(index);
-    removeBtn.setAttribute("aria-label", `Remove ${owner.name}`);
-    removeBtn.appendChild(knowledgeIcon("M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5", "knowledge-inline-icon"));
-    chip.append(name, editBtn, removeBtn);
-    wrap.appendChild(chip);
+    chip.appendChild(name);
+    names.appendChild(chip);
   });
-
-  const addBtn = document.createElement("button");
-  addBtn.type = "button";
-  addBtn.className = "knowledge-inline-btn knowledge-owner-add";
-  addBtn.dataset.knowledgeAction = "owner-add";
-  addBtn.dataset.knowledgeId = row.id;
-  addBtn.setAttribute("aria-label", "Add owner");
-  addBtn.appendChild(knowledgeIcon("M8 3.5v9M3.5 8h9", "knowledge-inline-icon"));
-  wrap.appendChild(addBtn);
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "knowledge-inline-btn knowledge-owners-edit";
+  editBtn.dataset.knowledgeAction = "owner-edit";
+  editBtn.dataset.knowledgeId = row.id;
+  editBtn.setAttribute("aria-label", "Edit owners");
+  editBtn.appendChild(knowledgeIcon("M11.2 2.6a1.5 1.5 0 0 1 2.1 2.1L5.7 12.3 2.6 13.4l1.1-3.1 7.5-7.7z", "knowledge-inline-icon"));
+  wrap.append(names, editBtn);
   td.appendChild(wrap);
 }
 
@@ -8533,21 +8525,11 @@ function closeKnowledgeOwnerEditor() {
   renderKnowledge();
 }
 
-function mountKnowledgeOwnerPopup() {
-  document.querySelector(".knowledge-owner-form")?.remove();
-  const editor = knowledgeOwnerEditor;
-  if (!editor) return;
-  const entry = knowledgeEntries.find((row) => row.id === editor.rowId);
-  if (!entry) {
-    knowledgeOwnerEditor = null;
-    return;
-  }
-  const people = knowledgeOwnerList(entry.owners);
-  const person = editor.index >= 0 ? people[editor.index] : null;
-  const form = document.createElement("form");
-  form.className = "knowledge-owner-form";
-  form.dataset.knowledgeId = entry.id;
-  form.dataset.ownerIndex = editor.index >= 0 ? String(editor.index) : "";
+function appendKnowledgeOwnerDraft(list, person) {
+  const row = document.createElement("div");
+  row.className = "knowledge-owner-form-person";
+  const nameRow = document.createElement("div");
+  nameRow.className = "knowledge-owner-form-name";
   const nameInput = document.createElement("input");
   nameInput.type = "text";
   nameInput.className = "knowledge-owner-input";
@@ -8556,6 +8538,16 @@ function mountKnowledgeOwnerPopup() {
   nameInput.dataset.ownerInput = "name";
   nameInput.value = person?.name || "";
   nameInput.autocomplete = "off";
+  const removeBtn = document.createElement("button");
+  removeBtn.type = "button";
+  removeBtn.className = "knowledge-inline-btn knowledge-owner-remove";
+  removeBtn.setAttribute("aria-label", person?.name ? `Remove ${person.name}` : "Remove owner");
+  removeBtn.appendChild(knowledgeIcon("M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5", "knowledge-inline-icon"));
+  removeBtn.addEventListener("click", () => {
+    row.remove();
+    placeKnowledgeOwnerPopup();
+  });
+  nameRow.append(nameInput, removeBtn);
   const urlInput = document.createElement("input");
   urlInput.type = "text";
   urlInput.className = "knowledge-owner-input";
@@ -8564,11 +8556,42 @@ function mountKnowledgeOwnerPopup() {
   urlInput.dataset.ownerInput = "url";
   urlInput.value = person?.url || "";
   urlInput.autocomplete = "off";
+  row.append(nameRow, urlInput);
+  list.appendChild(row);
+  return nameInput;
+}
+
+function mountKnowledgeOwnerPopup() {
+  document.querySelector(".knowledge-owner-form")?.remove();
+  const rowId = knowledgeOwnerEditor;
+  if (!rowId) return;
+  const entry = knowledgeEntries.find((row) => row.id === rowId);
+  if (!entry) {
+    knowledgeOwnerEditor = null;
+    return;
+  }
+  const people = knowledgeOwnerList(entry.owners);
+  const form = document.createElement("form");
+  form.className = "knowledge-owner-form";
+  form.dataset.knowledgeId = entry.id;
+  const list = document.createElement("div");
+  list.className = "knowledge-owner-form-list";
+  const drafts = people.length ? people : [{}];
+  drafts.forEach((person) => appendKnowledgeOwnerDraft(list, person));
   const error = document.createElement("p");
   error.className = "knowledge-owner-error";
   error.hidden = true;
   const actions = document.createElement("div");
   actions.className = "knowledge-owner-form-actions";
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "btn btn-ghost btn-sm";
+  addBtn.textContent = "Add owner";
+  addBtn.addEventListener("click", () => {
+    const nameInput = appendKnowledgeOwnerDraft(list, {});
+    placeKnowledgeOwnerPopup();
+    nameInput.focus();
+  });
   const saveBtn = document.createElement("button");
   saveBtn.type = "submit";
   saveBtn.className = "btn btn-primary btn-sm";
@@ -8576,11 +8599,13 @@ function mountKnowledgeOwnerPopup() {
   const cancelBtn = document.createElement("button");
   cancelBtn.type = "button";
   cancelBtn.className = "btn btn-ghost btn-sm";
-  cancelBtn.dataset.knowledgeAction = "owner-cancel";
-  cancelBtn.dataset.knowledgeId = entry.id;
   cancelBtn.textContent = "Cancel";
-  actions.append(saveBtn, cancelBtn);
-  form.append(nameInput, urlInput, error, actions);
+  cancelBtn.addEventListener("click", () => closeKnowledgeOwnerEditor());
+  actions.append(addBtn, saveBtn, cancelBtn);
+  form.append(list, error, actions);
+  form.addEventListener("input", () => {
+    error.hidden = true;
+  });
   form.addEventListener("submit", (event) => {
     event.preventDefault();
     saveKnowledgeOwnerForm(form);
@@ -8599,14 +8624,9 @@ function placeKnowledgeOwnerPopup() {
   const form = document.querySelector(".knowledge-owner-form");
   const editor = knowledgeOwnerEditor;
   if (!form || !editor || !knowledgeBody) return;
-  const anchor =
-    editor.index >= 0
-      ? knowledgeBody.querySelector(
-          `[data-knowledge-action="owner-edit"][data-knowledge-id="${CSS.escape(editor.rowId)}"][data-owner-index="${editor.index}"]`
-        )
-      : knowledgeBody.querySelector(
-          `[data-knowledge-action="owner-add"][data-knowledge-id="${CSS.escape(editor.rowId)}"]`
-        );
+  const anchor = knowledgeBody.querySelector(
+    `[data-knowledge-action="owner-edit"][data-knowledge-id="${CSS.escape(editor)}"]`
+  );
   if (!anchor) return;
   const rect = anchor.getBoundingClientRect();
   const width = form.offsetWidth || 240;
@@ -8625,24 +8645,27 @@ function saveKnowledgeOwnerForm(form) {
   const entry = knowledgeEntries.find((row) => row.id === id);
   const error = form.querySelector(".knowledge-owner-error");
   if (!entry) return;
-  const name = form.querySelector("[data-owner-input='name']")?.value.trim() || "";
-  const urlRaw = form.querySelector("[data-owner-input='url']")?.value.trim() || "";
-  if (!name) {
-    error.hidden = false;
-    error.textContent = "Enter a name.";
-    return;
+  const people = [];
+  const rows = [...form.querySelectorAll(".knowledge-owner-form-person")];
+  for (const row of rows) {
+    const name = row.querySelector("[data-owner-input='name']")?.value.trim() || "";
+    const urlRaw = row.querySelector("[data-owner-input='url']")?.value.trim() || "";
+    if (!name && !urlRaw) continue;
+    if (!name) {
+      error.hidden = false;
+      error.textContent = "Enter a name.";
+      row.querySelector("[data-owner-input='name']")?.focus();
+      return;
+    }
+    const url = urlRaw ? knowledgeLinkUrl(urlRaw) : "";
+    if (urlRaw && !url) {
+      error.hidden = false;
+      error.textContent = "Use an https link, such as a LinkedIn or X profile.";
+      row.querySelector("[data-owner-input='url']")?.focus();
+      return;
+    }
+    people.push({ name, url });
   }
-  const url = urlRaw ? knowledgeLinkUrl(urlRaw) : "";
-  if (urlRaw && !url) {
-    error.hidden = false;
-    error.textContent = "Use an https link, such as a LinkedIn or X profile.";
-    return;
-  }
-  const people = knowledgeOwnerList(entry.owners);
-  const index = form.dataset.ownerIndex === "" ? -1 : Number(form.dataset.ownerIndex);
-  const next = { name, url };
-  if (index >= 0 && index < people.length) people[index] = next;
-  else people.push(next);
   entry.owners = people;
   touchKnowledgeEntry(entry);
   knowledgeOwnerEditor = null;
@@ -8808,7 +8831,7 @@ function renderKnowledge() {
       notesCell.colSpan = KNOWLEDGE_COLUMNS.length + 2;
       const notes = document.createElement("textarea");
       notes.className = "knowledge-notes";
-      notes.rows = 3;
+      notes.rows = 1;
       notes.placeholder = "Notes";
       notes.value = row.notes || "";
       notes.setAttribute("aria-label", "Notes");
@@ -8826,6 +8849,7 @@ function renderKnowledge() {
   knowledgeRenderKey = key;
   wrap.scrollTop = scrollTop;
   wrap.scrollLeft = scrollLeft;
+  wrap.querySelectorAll(".knowledge-notes").forEach(fitKnowledgeNotes);
 
   if (focusId && focusField) {
     const next = knowledgeBody.querySelector(
@@ -8907,6 +8931,7 @@ if (knowledgeBody) {
     if (!entry || !Object.prototype.hasOwnProperty.call(entry, field)) return;
     entry[field] = event.target.value;
     entry.updatedAt = new Date().toISOString();
+    if (field === "notes") fitKnowledgeNotes(event.target);
     knowledgeRenderKey = knowledgeViewKey();
     window.MHN_DB?.saveKnowledgeLocal?.(knowledgeEntries);
     scheduleKnowledgeSave(id);
@@ -8919,8 +8944,8 @@ if (knowledgeBody) {
     if (!id) return;
     if (button.dataset.knowledgeAction === "expand") {
       const opening = !knowledgeExpanded.has(id);
+      knowledgeExpanded.clear();
       if (opening) knowledgeExpanded.add(id);
-      else knowledgeExpanded.delete(id);
       knowledgeRenderKey = "";
       renderKnowledge();
       if (opening) {
@@ -8936,27 +8961,11 @@ if (knowledgeBody) {
       knowledgeWebFocus = true;
       knowledgeRenderKey = "";
       renderKnowledge();
-    } else if (button.dataset.knowledgeAction === "owner-add") {
-      knowledgeOwnerEditor = { rowId: id, index: -1 };
-      knowledgeOwnerFocus = true;
-      knowledgeRenderKey = "";
-      renderKnowledge();
     } else if (button.dataset.knowledgeAction === "owner-edit") {
-      knowledgeOwnerEditor = { rowId: id, index: Number(button.dataset.ownerIndex) };
+      knowledgeOwnerEditor = id;
       knowledgeOwnerFocus = true;
       knowledgeRenderKey = "";
       renderKnowledge();
-    } else if (button.dataset.knowledgeAction === "owner-remove") {
-      const entry = knowledgeEntries.find((row) => row.id === id);
-      if (!entry) return;
-      const index = Number(button.dataset.ownerIndex);
-      entry.owners = knowledgeOwnerList(entry.owners).filter((_, ownerIndex) => ownerIndex !== index);
-      if (knowledgeOwnerEditor?.rowId === id) knowledgeOwnerEditor = null;
-      touchKnowledgeEntry(entry);
-      knowledgeRenderKey = "";
-      renderKnowledge();
-    } else if (button.dataset.knowledgeAction === "owner-cancel") {
-      closeKnowledgeOwnerEditor();
     }
   });
 
@@ -8991,7 +9000,7 @@ if (knowledgeBody) {
 
 document.addEventListener("pointerdown", (event) => {
   if (!knowledgeOwnerEditor) return;
-  if (event.target.closest?.(".knowledge-owner-form, .knowledge-owner, .knowledge-owner-add")) return;
+  if (event.target.closest?.(".knowledge-owner-form, .knowledge-owners-edit")) return;
   knowledgeOwnerEditor = null;
   knowledgeRenderKey = "";
   setTimeout(() => renderKnowledge(), 0);
