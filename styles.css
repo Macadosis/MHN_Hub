@@ -3626,7 +3626,7 @@ body.is-card-dragging .card {
   transition: background 0.15s ease, border-color 0.15s ease;
 }
 
-.activity-note:focus-within {
+.activity-note.is-editing {
   padding: 10px 12px;
   background: var(--surface);
   border-color: var(--line);
@@ -3646,6 +3646,62 @@ body.is-card-dragging .card {
 
 .activity-note.is-system .activity-note-text {
   color: var(--ink-soft);
+}
+
+.activity-note-fold {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  width: 100%;
+  min-width: 0;
+}
+
+.activity-note-fold-body {
+  width: 100%;
+  min-width: 0;
+}
+
+.activity-note.is-clamped:not(.is-expanded):not(.is-editing) .activity-note-fold-body {
+  max-height: var(--activity-note-clamp);
+  overflow: hidden;
+}
+
+.activity-note-expand {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  margin: 2px 0 0;
+  padding: 2px 0;
+  border: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 1.2;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.activity-note-expand:hover {
+  color: var(--ink);
+}
+
+.activity-note-expand:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+.activity-note-expand-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+  transition: transform 0.15s ease;
+}
+
+.activity-note.is-expanded .activity-note-expand-icon {
+  transform: rotate(180deg);
 }
 
 .note-textarea {

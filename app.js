@@ -808,8 +808,10 @@ const STAGE_PLACEMENT_NOTE_KIND = "stage";
 const PAUSED_NOTE_KIND = "paused";
 const UNPAUSED_NOTE_KIND = "unpaused";
 const ACTIVITY_NOTES_ONLY_KEY = "mhn-activity-notes-only";
+const ACTIVITY_NOTE_FOLD_ROWS = 12;
 
 let activityNotesOnly = false;
+const expandedActivityNoteIds = new Set();
 try {
   activityNotesOnly = localStorage.getItem(ACTIVITY_NOTES_ONLY_KEY) === "1";
 } catch {
@@ -5026,6 +5028,107 @@ function resizeActivityNote(textarea) {
   textarea.style.height = `${Math.max(textarea.scrollHeight, 0)}px`;
 }
 
+function activityNoteLineHeight(el) {
+  const style = getComputedStyle(el);
+  const fontSize = parseFloat(style.fontSize) || 14;
+  const parsed = parseFloat(style.lineHeight);
+  if (style.lineHeight.endsWith("px") && Number.isFinite(parsed)) return parsed;
+  if (Number.isFinite(parsed)) return parsed * fontSize;
+  return fontSize * 1.45;
+}
+
+function syncActivityNoteExpand(button, expanded) {
+  button.setAttribute("aria-expanded", expanded ? "true" : "false");
+  const label = button.querySelector(".activity-note-expand-label");
+  if (label) label.textContent = expanded ? "Show less" : "Show more";
+}
+
+function createActivityNoteExpand(noteId, card) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "activity-note-expand";
+  const icon = createSvgEl("svg", {
+    class: "activity-note-expand-icon",
+    viewBox: "0 0 16 16",
+    fill: "none",
+    "aria-hidden": "true",
+  });
+  icon.appendChild(
+    createSvgEl("path", {
+      d: "M4 6.5 8 10.5 12 6.5",
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "1.6",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+    })
+  );
+  const label = document.createElement("span");
+  label.className = "activity-note-expand-label";
+  button.append(icon, label);
+  button.addEventListener("mousedown", (event) => {
+    event.preventDefault();
+  });
+  button.addEventListener("click", () => {
+    const expanded = !card.classList.contains("is-expanded");
+    card.classList.toggle("is-expanded", expanded);
+    if (expanded) expandedActivityNoteIds.add(noteId);
+    else expandedActivityNoteIds.delete(noteId);
+    syncActivityNoteExpand(button, expanded);
+    const field = card.querySelector(".note-textarea");
+    if (field) resizeActivityNote(field);
+  });
+  syncActivityNoteExpand(button, card.classList.contains("is-expanded"));
+  return button;
+}
+
+function fitActivityNote(card, body) {
+  const noteId = card.dataset.noteId || "";
+  if (body.scrollHeight <= 0) return;
+
+  const style = getComputedStyle(body);
+  const borderTop = parseFloat(style.borderTopWidth) || 0;
+  const limit = activityNoteLineHeight(body) * ACTIVITY_NOTE_FOLD_ROWS + borderTop;
+  const overflows = body.scrollHeight > limit + 4;
+
+  const foldBody = body.parentElement?.classList.contains("activity-note-fold-body")
+    ? body.parentElement
+    : null;
+  const fold = foldBody?.parentElement?.classList.contains("activity-note-fold")
+    ? foldBody.parentElement
+    : null;
+
+  if (!overflows) {
+    expandedActivityNoteIds.delete(noteId);
+    card.classList.remove("is-clamped", "is-expanded");
+    card.style.removeProperty("--activity-note-clamp");
+    if (fold) fold.replaceWith(body);
+    return;
+  }
+
+  let foldEl = fold;
+  if (!foldEl) {
+    foldEl = document.createElement("div");
+    foldEl.className = "activity-note-fold";
+    const nextBody = document.createElement("div");
+    nextBody.className = "activity-note-fold-body";
+    nextBody.id = `activity-note-body-${noteId}`;
+    body.replaceWith(foldEl);
+    foldEl.appendChild(nextBody);
+    nextBody.appendChild(body);
+    const button = createActivityNoteExpand(noteId, card);
+    button.setAttribute("aria-controls", nextBody.id);
+    foldEl.appendChild(button);
+  }
+
+  card.classList.add("is-clamped");
+  card.style.setProperty("--activity-note-clamp", `${limit}px`);
+  const expanded = expandedActivityNoteIds.has(noteId);
+  card.classList.toggle("is-expanded", expanded);
+  const button = foldEl.querySelector(".activity-note-expand");
+  if (button) syncActivityNoteExpand(button, expanded);
+}
+
 function renderActivityNotes() {
   activityNotesEl.innerHTML = "";
 
@@ -5073,6 +5176,7 @@ function renderActivityNotes() {
       body.textContent = note.text;
       card.append(time, body);
       activityNotesEl.appendChild(card);
+      fitActivityNote(card, body);
       continue;
     }
 
@@ -5095,21 +5199,27 @@ function renderActivityNotes() {
       resizeActivityNote(textarea);
     });
     textarea.addEventListener("focus", () => {
+      card.classList.add("is-editing");
       textarea.style.width = "100%";
       resizeActivityNote(textarea);
     });
     textarea.addEventListener("blur", () => {
+      card.classList.remove("is-editing");
       if (textarea.value !== initialText && !noteWasEdited(note)) {
         note.updatedAt = Date.now();
         note.updatedBy = stampCurrentUser(note.createdBy);
         updateActivityNoteTime(note, time);
       }
-      resizeActivityNote(textarea);
+      requestAnimationFrame(() => {
+        resizeActivityNote(textarea);
+        fitActivityNote(card, textarea);
+      });
     });
 
     card.append(time, textarea);
     activityNotesEl.appendChild(card);
     resizeActivityNote(textarea);
+    fitActivityNote(card, textarea);
   }
 }
 
@@ -6395,6 +6505,7 @@ function openModal({
 } = {}) {
   editingId = deal ? deal.id : null;
   modalReadOnly = readOnly && Boolean(deal);
+  expandedActivityNoteIds.clear();
   createStage = stage;
   modalNotes = deal
     ? (deal.notes || []).map((note) => ({ ...note }))
