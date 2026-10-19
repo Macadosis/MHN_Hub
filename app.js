@@ -110,6 +110,9 @@ const saveBtn = document.getElementById("saveBtn");
 const deleteBtn = document.getElementById("dismissDealBtn");
 const dismissOverlay = document.getElementById("dismissOverlay");
 const dismissLead = document.getElementById("dismissLead");
+const knowledgeDeleteOverlay = document.getElementById("knowledgeDeleteOverlay");
+const knowledgeDeleteLead = document.getElementById("knowledgeDeleteLead");
+let knowledgeDeleteId = "";
 const historyListEl = document.getElementById("historyList");
 const historySearchInput = document.getElementById("historySearchInput");
 let historySearchQuery = "";
@@ -2169,6 +2172,8 @@ function render() {
     renderDashboard();
   } else if (activeTab === "history") {
     renderHistory();
+  } else if (activeTab === "knowledge") {
+    renderKnowledge();
   } else if (activeTab === "tasks") {
     renderFilters(tasksFiltersEl, tasksClearFiltersBtn);
     renderTasksView();
@@ -7270,7 +7275,8 @@ document.getElementById("modalCloseBtn").addEventListener("click", closeModal);
 document.getElementById("cancelBtn").addEventListener("click", closeModal);
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
-  if (!pendingDraftOverlay.hidden) closePendingDraftModal();
+  if (!knowledgeDeleteOverlay.hidden) closeKnowledgeDeleteModal();
+  else if (!pendingDraftOverlay.hidden) closePendingDraftModal();
   else if (!pauseOverlay.hidden) closePauseModal();
   else if (!dismissOverlay.hidden) closeDismissModal();
   else if (!commitOverlay.hidden) closeCommitModal();
@@ -8140,6 +8146,867 @@ importDropZone.addEventListener("drop", (e) => {
   if (file) handleImportFile(file);
 });
 
+/* ---------------------------- Knowledge ------------------------- */
+
+const KNOWLEDGE_COLUMNS = [
+  { key: "web", label: "Web", placeholder: "website" },
+  { key: "founded", label: "Founded", placeholder: "year" },
+  { key: "size", label: "Size", placeholder: "headcount" },
+  { key: "valuation", label: "Valuation", placeholder: "valuation" },
+  { key: "origin", label: "Origin", placeholder: "city or country" },
+  { key: "market", label: "Market", placeholder: "market" },
+  { key: "owners", label: "Owners", placeholder: "owners" },
+];
+
+const knowledgeBody = document.getElementById("knowledgeBody");
+const knowledgeSearchInput = document.getElementById("knowledgeSearchInput");
+const knowledgeSearchBubble = document.getElementById("knowledgeSearchBubble");
+const knowledgeSearchClearBtn = document.getElementById("knowledgeSearchClearBtn");
+const knowledgeAddBtn = document.getElementById("knowledgeAddBtn");
+
+let knowledgeEntries = [];
+let knowledgeSearchQuery = "";
+const knowledgeExpanded = new Set();
+const knowledgeDirty = new Set();
+let knowledgeRenderKey = "";
+let knowledgeSaveTimer = 0;
+let knowledgeSaveInFlight = false;
+let knowledgeRefreshQueued = false;
+let knowledgeSaveChain = Promise.resolve();
+let knowledgeWebEditingId = "";
+let knowledgeWebFocus = false;
+let knowledgeOwnerEditor = null;
+let knowledgeOwnerFocus = false;
+
+function knowledgeLinkUrl(value) {
+  const raw = String(value || "").trim();
+  if (!raw || /\s/.test(raw)) return "";
+  const withProtocol = /^[a-z][a-z0-9+.-]*:/i.test(raw) ? raw : `https://${raw}`;
+  let url;
+  try {
+    url = new URL(withProtocol);
+  } catch {
+    return "";
+  }
+  if (url.protocol !== "http:" && url.protocol !== "https:") return "";
+  const host = url.hostname;
+  if (!host || host.includes("%") || (!host.includes(".") && host !== "localhost")) return "";
+  return url.href;
+}
+
+function knowledgeOwnerList(value) {
+  const parse = window.MHN_DB?.parseKnowledgeOwners;
+  const list = typeof parse === "function" ? parse(value) : [];
+  return list.map((owner) => ({ name: owner.name, url: owner.url }));
+}
+
+function knowledgeOwnerSearchText(value) {
+  return knowledgeOwnerList(value)
+    .map((owner) => `${owner.name} ${owner.url}`)
+    .join("\n");
+}
+
+function knowledgeIcon(path, className) {
+  const svg = createSvgEl("svg", {
+    class: className,
+    viewBox: "0 0 16 16",
+    fill: "none",
+    "aria-hidden": "true",
+  });
+  svg.appendChild(
+    createSvgEl("path", {
+      d: path,
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "1.6",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+    })
+  );
+  return svg;
+}
+
+function knowledgeViewKey() {
+  return JSON.stringify({
+    q: knowledgeSearchQuery,
+    open: [...knowledgeExpanded].sort(),
+    webEdit: knowledgeWebEditingId,
+    ownerEdit: knowledgeOwnerEditor,
+    rows: knowledgeEntries.map((row) => [
+      row.id,
+      row.web,
+      row.founded,
+      row.size,
+      row.valuation,
+      row.origin,
+      row.market,
+      row.owners,
+      row.notes,
+    ]),
+  });
+}
+
+function knowledgeSearchWords(query) {
+  return String(query || "")
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean);
+}
+
+function knowledgeRowMatches(row, query) {
+  const words = knowledgeSearchWords(query);
+  if (!words.length) return true;
+  const haystack = [
+    row.web,
+    row.founded,
+    row.size,
+    row.valuation,
+    row.origin,
+    row.market,
+    knowledgeOwnerSearchText(row.owners),
+    row.notes,
+  ]
+    .join("\n")
+    .toLowerCase();
+  return words.every((word) => haystack.includes(word));
+}
+
+function enqueueKnowledgeWork(work) {
+  knowledgeSaveChain = knowledgeSaveChain.then(work).catch((err) => {
+    console.error(err);
+  });
+}
+
+function scheduleKnowledgeSave(id) {
+  if (id) knowledgeDirty.add(id);
+  clearTimeout(knowledgeSaveTimer);
+  knowledgeSaveTimer = setTimeout(() => {
+    knowledgeSaveTimer = 0;
+    enqueueKnowledgeWork(flushKnowledgeSave);
+  }, 400);
+}
+
+async function flushKnowledgeSave() {
+  const api = window.MHN_DB;
+  const ids = [...knowledgeDirty];
+  knowledgeDirty.clear();
+  const rows = ids
+    .map((id) => knowledgeEntries.find((row) => row.id === id))
+    .filter(Boolean);
+  knowledgeSaveInFlight = true;
+  try {
+    if (api?.saveKnowledgeAsync) await api.saveKnowledgeAsync(rows, knowledgeEntries);
+    else api?.saveKnowledgeLocal?.(knowledgeEntries);
+  } finally {
+    knowledgeSaveInFlight = false;
+    if (knowledgeRefreshQueued && !knowledgeDirty.size && !knowledgeSaveTimer) {
+      knowledgeRefreshQueued = false;
+      refreshKnowledgeFromRemote();
+    }
+  }
+}
+
+function persistKnowledgeNow() {
+  clearTimeout(knowledgeSaveTimer);
+  knowledgeSaveTimer = 0;
+  window.MHN_DB?.saveKnowledgeLocal?.(knowledgeEntries);
+  const rows = [...knowledgeDirty]
+    .map((id) => knowledgeEntries.find((row) => row.id === id))
+    .filter(Boolean);
+  knowledgeDirty.clear();
+  if (rows.length) window.MHN_DB?.saveKnowledgeAsync?.(rows, knowledgeEntries);
+}
+
+async function refreshKnowledgeFromRemote() {
+  const api = window.MHN_DB;
+  if (!api?.fetchKnowledgeAsync) return;
+  if (knowledgeDirty.size || knowledgeSaveTimer || knowledgeSaveInFlight) {
+    knowledgeRefreshQueued = true;
+    return;
+  }
+  if (
+    document.activeElement?.closest?.(".knowledge-table") ||
+    document.activeElement?.closest?.(".knowledge-owner-form") ||
+    knowledgeOwnerEditor
+  ) {
+    knowledgeRefreshQueued = true;
+    return;
+  }
+  try {
+    const remote = await api.fetchKnowledgeAsync();
+    if (!Array.isArray(remote)) return;
+    if (knowledgeDirty.size || knowledgeSaveInFlight || knowledgeSaveTimer) {
+      knowledgeRefreshQueued = true;
+      return;
+    }
+    knowledgeEntries = remote;
+    knowledgeRenderKey = "";
+    if (activeTab === "knowledge") renderKnowledge();
+  } catch (err) {
+    console.warn("Knowledge refresh failed:", err);
+  }
+}
+
+function setKnowledgeSearch(value) {
+  knowledgeSearchQuery = value;
+  const hasQuery = value.trim().length > 0;
+  updateSearchClearUi(knowledgeSearchBubble, knowledgeSearchClearBtn, hasQuery);
+  if (!hasQuery) knowledgeSearchBubble?.classList.remove("has-query");
+  knowledgeRenderKey = "";
+  if (activeTab === "knowledge") renderKnowledge();
+}
+
+function addKnowledgeEntry() {
+  const now = new Date().toISOString();
+  const entry = {
+    id: crypto.randomUUID(),
+    web: "",
+    founded: "",
+    size: "",
+    valuation: "",
+    origin: "",
+    market: "",
+    owners: [],
+    notes: "",
+    createdAt: now,
+    updatedAt: now,
+  };
+  knowledgeEntries.push(entry);
+  if (knowledgeSearchInput && knowledgeSearchQuery) {
+    knowledgeSearchInput.value = "";
+    knowledgeSearchQuery = "";
+    updateSearchClearUi(knowledgeSearchBubble, knowledgeSearchClearBtn, false);
+    knowledgeSearchBubble?.classList.remove("has-query");
+  }
+  window.MHN_DB?.saveKnowledgeLocal?.(knowledgeEntries);
+  scheduleKnowledgeSave(entry.id);
+  knowledgeRenderKey = "";
+  renderKnowledge();
+  const input = knowledgeBody?.querySelector(
+    `[data-knowledge-id="${entry.id}"][data-knowledge-field="web"]`
+  );
+  input?.focus();
+}
+
+function openKnowledgeDeleteModal(id) {
+  const entry = knowledgeEntries.find((row) => row.id === id);
+  if (!entry || !knowledgeDeleteOverlay) return;
+  knowledgeDeleteId = id;
+  const label = String(entry.web || "").trim();
+  knowledgeDeleteLead.textContent = label
+    ? `Are you sure you want to delete this entry “${label}”?`
+    : "Are you sure you want to delete this entry?";
+  knowledgeDeleteOverlay.hidden = false;
+}
+
+function closeKnowledgeDeleteModal() {
+  knowledgeDeleteId = "";
+  if (knowledgeDeleteOverlay) knowledgeDeleteOverlay.hidden = true;
+}
+
+function confirmKnowledgeDelete() {
+  const id = knowledgeDeleteId;
+  if (!id) return;
+  closeKnowledgeDeleteModal();
+  deleteKnowledgeEntry(id);
+}
+
+function deleteKnowledgeEntry(id) {
+  const entry = knowledgeEntries.find((row) => row.id === id);
+  if (!entry) return;
+  knowledgeEntries = knowledgeEntries.filter((row) => row.id !== id);
+  knowledgeExpanded.delete(id);
+  knowledgeDirty.delete(id);
+  knowledgeRenderKey = "";
+  enqueueKnowledgeWork(async () => {
+    const api = window.MHN_DB;
+    knowledgeSaveInFlight = true;
+    try {
+      if (api?.deleteKnowledgeAsync) await api.deleteKnowledgeAsync(id, knowledgeEntries);
+      else api?.saveKnowledgeLocal?.(knowledgeEntries);
+    } finally {
+      knowledgeSaveInFlight = false;
+    }
+  });
+  renderKnowledge();
+}
+
+function touchKnowledgeEntry(entry) {
+  entry.updatedAt = new Date().toISOString();
+  window.MHN_DB?.saveKnowledgeLocal?.(knowledgeEntries);
+  scheduleKnowledgeSave(entry.id);
+}
+
+function renderKnowledgeWebCell(td, row) {
+  const value = String(row.web || "");
+  const editing = knowledgeWebEditingId === row.id || !value.trim();
+  if (editing) {
+    const input = document.createElement("input");
+    input.type = "text";
+    input.className = "knowledge-cell-input";
+    input.value = value;
+    input.placeholder = "website";
+    input.autocomplete = "off";
+    input.setAttribute("aria-label", "Web");
+    input.dataset.knowledgeId = row.id;
+    input.dataset.knowledgeField = "web";
+    td.appendChild(input);
+    return;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "knowledge-web";
+  const href = knowledgeLinkUrl(value);
+  const label = href ? document.createElement("a") : document.createElement("span");
+  label.className = href ? "knowledge-web-link" : "knowledge-web-text";
+  label.textContent = value.trim();
+  if (href) {
+    label.href = href;
+    label.target = "_blank";
+    label.rel = "noopener noreferrer";
+    label.title = href;
+  }
+  const editBtn = document.createElement("button");
+  editBtn.type = "button";
+  editBtn.className = "knowledge-inline-btn";
+  editBtn.dataset.knowledgeAction = "web-edit";
+  editBtn.dataset.knowledgeId = row.id;
+  editBtn.setAttribute("aria-label", "Edit website");
+  editBtn.appendChild(knowledgeIcon("M11.2 2.6a1.5 1.5 0 0 1 2.1 2.1L5.7 12.3 2.6 13.4l1.1-3.1 7.5-7.7z", "knowledge-inline-icon"));
+  wrap.append(label, editBtn);
+  td.appendChild(wrap);
+}
+
+function renderKnowledgeOwnersCell(td, row) {
+  const people = knowledgeOwnerList(row.owners);
+  const wrap = document.createElement("div");
+  wrap.className = "knowledge-owners";
+  people.forEach((owner, index) => {
+    const chip = document.createElement("span");
+    chip.className = "knowledge-owner";
+    const href = knowledgeLinkUrl(owner.url);
+    const name = href ? document.createElement("a") : document.createElement("span");
+    name.className = href ? "knowledge-owner-link" : "knowledge-owner-name";
+    name.textContent = owner.name;
+    if (href) {
+      name.href = href;
+      name.target = "_blank";
+      name.rel = "noopener noreferrer";
+      name.title = href;
+    }
+    const editBtn = document.createElement("button");
+    editBtn.type = "button";
+    editBtn.className = "knowledge-inline-btn";
+    editBtn.dataset.knowledgeAction = "owner-edit";
+    editBtn.dataset.knowledgeId = row.id;
+    editBtn.dataset.ownerIndex = String(index);
+    editBtn.setAttribute("aria-label", `Edit ${owner.name}`);
+    editBtn.appendChild(knowledgeIcon("M11.2 2.6a1.5 1.5 0 0 1 2.1 2.1L5.7 12.3 2.6 13.4l1.1-3.1 7.5-7.7z", "knowledge-inline-icon"));
+    const removeBtn = document.createElement("button");
+    removeBtn.type = "button";
+    removeBtn.className = "knowledge-inline-btn knowledge-owner-remove";
+    removeBtn.dataset.knowledgeAction = "owner-remove";
+    removeBtn.dataset.knowledgeId = row.id;
+    removeBtn.dataset.ownerIndex = String(index);
+    removeBtn.setAttribute("aria-label", `Remove ${owner.name}`);
+    removeBtn.appendChild(knowledgeIcon("M4.5 4.5 11.5 11.5M11.5 4.5 4.5 11.5", "knowledge-inline-icon"));
+    chip.append(name, editBtn, removeBtn);
+    wrap.appendChild(chip);
+  });
+
+  const addBtn = document.createElement("button");
+  addBtn.type = "button";
+  addBtn.className = "knowledge-inline-btn knowledge-owner-add";
+  addBtn.dataset.knowledgeAction = "owner-add";
+  addBtn.dataset.knowledgeId = row.id;
+  addBtn.setAttribute("aria-label", "Add owner");
+  addBtn.appendChild(knowledgeIcon("M8 3.5v9M3.5 8h9", "knowledge-inline-icon"));
+  wrap.appendChild(addBtn);
+  td.appendChild(wrap);
+}
+
+function closeKnowledgeOwnerEditor() {
+  knowledgeOwnerEditor = null;
+  document.querySelector(".knowledge-owner-form")?.remove();
+  knowledgeRenderKey = "";
+  renderKnowledge();
+}
+
+function mountKnowledgeOwnerPopup() {
+  document.querySelector(".knowledge-owner-form")?.remove();
+  const editor = knowledgeOwnerEditor;
+  if (!editor) return;
+  const entry = knowledgeEntries.find((row) => row.id === editor.rowId);
+  if (!entry) {
+    knowledgeOwnerEditor = null;
+    return;
+  }
+  const people = knowledgeOwnerList(entry.owners);
+  const person = editor.index >= 0 ? people[editor.index] : null;
+  const form = document.createElement("form");
+  form.className = "knowledge-owner-form";
+  form.dataset.knowledgeId = entry.id;
+  form.dataset.ownerIndex = editor.index >= 0 ? String(editor.index) : "";
+  const nameInput = document.createElement("input");
+  nameInput.type = "text";
+  nameInput.className = "knowledge-owner-input";
+  nameInput.placeholder = "Name";
+  nameInput.setAttribute("aria-label", "Owner name");
+  nameInput.dataset.ownerInput = "name";
+  nameInput.value = person?.name || "";
+  nameInput.autocomplete = "off";
+  const urlInput = document.createElement("input");
+  urlInput.type = "text";
+  urlInput.className = "knowledge-owner-input";
+  urlInput.placeholder = "LinkedIn or X URL";
+  urlInput.setAttribute("aria-label", "Owner profile URL");
+  urlInput.dataset.ownerInput = "url";
+  urlInput.value = person?.url || "";
+  urlInput.autocomplete = "off";
+  const error = document.createElement("p");
+  error.className = "knowledge-owner-error";
+  error.hidden = true;
+  const actions = document.createElement("div");
+  actions.className = "knowledge-owner-form-actions";
+  const saveBtn = document.createElement("button");
+  saveBtn.type = "submit";
+  saveBtn.className = "btn btn-primary btn-sm";
+  saveBtn.textContent = "Save";
+  const cancelBtn = document.createElement("button");
+  cancelBtn.type = "button";
+  cancelBtn.className = "btn btn-ghost btn-sm";
+  cancelBtn.dataset.knowledgeAction = "owner-cancel";
+  cancelBtn.dataset.knowledgeId = entry.id;
+  cancelBtn.textContent = "Cancel";
+  actions.append(saveBtn, cancelBtn);
+  form.append(nameInput, urlInput, error, actions);
+  form.addEventListener("submit", (event) => {
+    event.preventDefault();
+    saveKnowledgeOwnerForm(form);
+  });
+  form.addEventListener("keydown", (event) => {
+    if (event.key !== "Escape") return;
+    event.preventDefault();
+    event.stopPropagation();
+    closeKnowledgeOwnerEditor();
+  });
+  document.body.appendChild(form);
+  placeKnowledgeOwnerPopup();
+}
+
+function placeKnowledgeOwnerPopup() {
+  const form = document.querySelector(".knowledge-owner-form");
+  const editor = knowledgeOwnerEditor;
+  if (!form || !editor || !knowledgeBody) return;
+  const anchor =
+    editor.index >= 0
+      ? knowledgeBody.querySelector(
+          `[data-knowledge-action="owner-edit"][data-knowledge-id="${CSS.escape(editor.rowId)}"][data-owner-index="${editor.index}"]`
+        )
+      : knowledgeBody.querySelector(
+          `[data-knowledge-action="owner-add"][data-knowledge-id="${CSS.escape(editor.rowId)}"]`
+        );
+  if (!anchor) return;
+  const rect = anchor.getBoundingClientRect();
+  const width = form.offsetWidth || 240;
+  const height = form.offsetHeight || 148;
+  let top = rect.bottom + 6;
+  if (top + height > window.innerHeight - 8) top = Math.max(8, rect.top - height - 6);
+  let left = rect.left;
+  if (left + width > window.innerWidth - 8) left = window.innerWidth - width - 8;
+  if (left < 8) left = 8;
+  form.style.top = `${Math.round(top)}px`;
+  form.style.left = `${Math.round(left)}px`;
+}
+
+function saveKnowledgeOwnerForm(form) {
+  const id = form.dataset.knowledgeId;
+  const entry = knowledgeEntries.find((row) => row.id === id);
+  const error = form.querySelector(".knowledge-owner-error");
+  if (!entry) return;
+  const name = form.querySelector("[data-owner-input='name']")?.value.trim() || "";
+  const urlRaw = form.querySelector("[data-owner-input='url']")?.value.trim() || "";
+  if (!name) {
+    error.hidden = false;
+    error.textContent = "Enter a name.";
+    return;
+  }
+  const url = urlRaw ? knowledgeLinkUrl(urlRaw) : "";
+  if (urlRaw && !url) {
+    error.hidden = false;
+    error.textContent = "Use an https link, such as a LinkedIn or X profile.";
+    return;
+  }
+  const people = knowledgeOwnerList(entry.owners);
+  const index = form.dataset.ownerIndex === "" ? -1 : Number(form.dataset.ownerIndex);
+  const next = { name, url };
+  if (index >= 0 && index < people.length) people[index] = next;
+  else people.push(next);
+  entry.owners = people;
+  touchKnowledgeEntry(entry);
+  knowledgeOwnerEditor = null;
+  knowledgeRenderKey = "";
+  renderKnowledge();
+}
+
+function renderKnowledge() {
+  if (!knowledgeBody) return;
+  const key = knowledgeViewKey();
+  if (key === knowledgeRenderKey && knowledgeBody.childElementCount) return;
+
+  const active = document.activeElement;
+  const focusId = active?.dataset?.knowledgeId || "";
+  const focusField = active?.dataset?.knowledgeField || "";
+  const selStart = typeof active?.selectionStart === "number" ? active.selectionStart : null;
+  const selEnd = typeof active?.selectionEnd === "number" ? active.selectionEnd : null;
+  const previousWrap = knowledgeBody.querySelector(".knowledge-table-wrap");
+  const scrollTop = previousWrap?.scrollTop || 0;
+  const scrollLeft = previousWrap?.scrollLeft || 0;
+
+  knowledgeBody.replaceChildren();
+
+  const visible = knowledgeEntries.filter((row) => knowledgeRowMatches(row, knowledgeSearchQuery));
+  if (!visible.length) {
+    const empty = document.createElement("p");
+    empty.className = "knowledge-empty";
+    empty.textContent = knowledgeEntries.length
+      ? "No entries match that search."
+      : "No entries yet. Add one to start.";
+    knowledgeBody.appendChild(empty);
+    knowledgeRenderKey = key;
+    document.querySelector(".knowledge-owner-form")?.remove();
+    return;
+  }
+
+  const wrap = document.createElement("div");
+  wrap.className = "knowledge-table-wrap";
+  const table = document.createElement("table");
+  table.className = "knowledge-table";
+  table.setAttribute("aria-label", "Knowledge");
+
+  const thead = document.createElement("thead");
+  const headRow = document.createElement("tr");
+  const expandHead = document.createElement("th");
+  expandHead.scope = "col";
+  expandHead.className = "knowledge-col-expand";
+  const expandHeadLabel = document.createElement("span");
+  expandHeadLabel.className = "visually-hidden";
+  expandHeadLabel.textContent = "Notes";
+  expandHead.appendChild(expandHeadLabel);
+  headRow.appendChild(expandHead);
+  for (const column of KNOWLEDGE_COLUMNS) {
+    const th = document.createElement("th");
+    th.scope = "col";
+    th.className = `knowledge-col knowledge-col-${column.key}`;
+    th.textContent = column.label;
+    headRow.appendChild(th);
+  }
+  const deleteHead = document.createElement("th");
+  deleteHead.scope = "col";
+  deleteHead.className = "knowledge-col-delete";
+  const deleteHeadLabel = document.createElement("span");
+  deleteHeadLabel.className = "visually-hidden";
+  deleteHeadLabel.textContent = "Delete";
+  deleteHead.appendChild(deleteHeadLabel);
+  headRow.appendChild(deleteHead);
+  thead.appendChild(headRow);
+  table.appendChild(thead);
+
+  const tbody = document.createElement("tbody");
+  for (const row of visible) {
+    const open = knowledgeExpanded.has(row.id);
+    const dataRow = document.createElement("tr");
+    dataRow.className = open ? "is-open" : "";
+    dataRow.dataset.knowledgeId = row.id;
+
+    const expandCell = document.createElement("td");
+    expandCell.className = "knowledge-col-expand";
+    const expandBtn = document.createElement("button");
+    expandBtn.type = "button";
+    expandBtn.className = "knowledge-expand";
+    expandBtn.dataset.knowledgeAction = "expand";
+    expandBtn.dataset.knowledgeId = row.id;
+    expandBtn.setAttribute("aria-expanded", open ? "true" : "false");
+    expandBtn.setAttribute("aria-label", open ? "Hide notes" : "Show notes");
+    const icon = createSvgEl("svg", {
+      class: "knowledge-expand-icon",
+      viewBox: "0 0 16 16",
+      fill: "none",
+      "aria-hidden": "true",
+    });
+    icon.appendChild(
+      createSvgEl("path", {
+        d: "M4 6.5 8 10.5 12 6.5",
+        fill: "none",
+        stroke: "currentColor",
+        "stroke-width": "1.6",
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+      })
+    );
+    expandBtn.appendChild(icon);
+    expandCell.appendChild(expandBtn);
+    dataRow.appendChild(expandCell);
+
+    for (const column of KNOWLEDGE_COLUMNS) {
+      const td = document.createElement("td");
+      td.className = `knowledge-col knowledge-col-${column.key}`;
+      if (column.key === "web") renderKnowledgeWebCell(td, row);
+      else if (column.key === "owners") renderKnowledgeOwnersCell(td, row);
+      else {
+        const input = document.createElement("input");
+        input.type = "text";
+        input.className = "knowledge-cell-input";
+        input.value = row[column.key] || "";
+        input.placeholder = column.placeholder;
+        input.autocomplete = "off";
+        input.setAttribute("aria-label", column.label);
+        input.dataset.knowledgeId = row.id;
+        input.dataset.knowledgeField = column.key;
+        td.appendChild(input);
+      }
+      dataRow.appendChild(td);
+    }
+
+    const deleteCell = document.createElement("td");
+    deleteCell.className = "knowledge-col-delete";
+    const deleteBtn = document.createElement("button");
+    deleteBtn.type = "button";
+    deleteBtn.className = "knowledge-delete";
+    deleteBtn.dataset.knowledgeAction = "delete";
+    deleteBtn.dataset.knowledgeId = row.id;
+    deleteBtn.setAttribute("aria-label", "Delete entry");
+    const trash = createSvgEl("svg", {
+      class: "knowledge-delete-icon",
+      viewBox: "0 0 16 16",
+      fill: "none",
+      "aria-hidden": "true",
+    });
+    const trashStroke = {
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "1.6",
+      "stroke-linecap": "round",
+      "stroke-linejoin": "round",
+    };
+    trash.append(
+      createSvgEl("path", { ...trashStroke, d: "M3.2 4.4h9.6" }),
+      createSvgEl("path", { ...trashStroke, d: "M6.4 4.4V3.3a.7.7 0 0 1 .7-.7h1.8a.7.7 0 0 1 .7.7v1.1" }),
+      createSvgEl("path", { ...trashStroke, d: "M4.4 4.4l.55 8.1a.9.9 0 0 0 .9.8h4.3a.9.9 0 0 0 .9-.8l.55-8.1" }),
+      createSvgEl("path", { ...trashStroke, d: "M6.7 7v3.4M9.3 7v3.4" })
+    );
+    deleteBtn.appendChild(trash);
+    deleteCell.appendChild(deleteBtn);
+    dataRow.appendChild(deleteCell);
+    tbody.appendChild(dataRow);
+
+    if (open) {
+      const notesRow = document.createElement("tr");
+      notesRow.className = "knowledge-notes-row";
+      const notesCell = document.createElement("td");
+      notesCell.colSpan = KNOWLEDGE_COLUMNS.length + 2;
+      const notes = document.createElement("textarea");
+      notes.className = "knowledge-notes";
+      notes.rows = 3;
+      notes.placeholder = "Notes";
+      notes.value = row.notes || "";
+      notes.setAttribute("aria-label", "Notes");
+      notes.dataset.knowledgeId = row.id;
+      notes.dataset.knowledgeField = "notes";
+      notesCell.appendChild(notes);
+      notesRow.appendChild(notesCell);
+      tbody.appendChild(notesRow);
+    }
+  }
+
+  table.appendChild(tbody);
+  wrap.appendChild(table);
+  knowledgeBody.appendChild(wrap);
+  knowledgeRenderKey = key;
+  wrap.scrollTop = scrollTop;
+  wrap.scrollLeft = scrollLeft;
+
+  if (focusId && focusField) {
+    const next = knowledgeBody.querySelector(
+      `[data-knowledge-id="${focusId}"][data-knowledge-field="${focusField}"]`
+    );
+    if (next) {
+      next.focus({ preventScroll: true });
+      if (selStart != null && typeof next.setSelectionRange === "function") {
+        try {
+          next.setSelectionRange(selStart, selEnd);
+        } catch {
+          /* ignore inputs that reject a selection */
+        }
+      }
+    }
+  }
+  if (knowledgeWebFocus) {
+    knowledgeWebFocus = false;
+    const webInput = knowledgeBody.querySelector(
+      `[data-knowledge-id="${CSS.escape(knowledgeWebEditingId)}"][data-knowledge-field="web"]`
+    );
+    webInput?.focus();
+    webInput?.select();
+  }
+  mountKnowledgeOwnerPopup();
+  if (knowledgeOwnerFocus) {
+    knowledgeOwnerFocus = false;
+    document.querySelector(".knowledge-owner-form [data-owner-input='name']")?.focus();
+  }
+}
+
+function wireKnowledgeSearch() {
+  if (!knowledgeSearchInput) return;
+  knowledgeSearchInput.addEventListener("input", () => setKnowledgeSearch(knowledgeSearchInput.value));
+  knowledgeSearchInput.addEventListener("keydown", (event) => {
+    if (event.key === "Escape" && knowledgeSearchInput.value) {
+      event.preventDefault();
+      event.stopPropagation();
+      knowledgeSearchInput.value = "";
+      setKnowledgeSearch("");
+    }
+  });
+  knowledgeSearchInput.addEventListener("focus", () => {
+    expandSearch({
+      bubble: knowledgeSearchBubble,
+      input: knowledgeSearchInput,
+      clearBtn: knowledgeSearchClearBtn,
+    });
+  });
+  knowledgeSearchInput.addEventListener("blur", () => {
+    if (!knowledgeSearchInput.value) {
+      knowledgeSearchBubble?.classList.remove("is-expanded", "is-expanded-settled");
+    }
+  });
+  knowledgeSearchClearBtn?.addEventListener("click", () => {
+    knowledgeSearchInput.value = "";
+    setKnowledgeSearch("");
+    knowledgeSearchInput.focus({ preventScroll: true });
+  });
+  knowledgeSearchBubble?.addEventListener("pointerdown", (event) => {
+    if (isMobileViewport() && !knowledgeSearchBubble.classList.contains("is-expanded")) {
+      event.preventDefault();
+      expandSearch({
+        bubble: knowledgeSearchBubble,
+        input: knowledgeSearchInput,
+        clearBtn: knowledgeSearchClearBtn,
+      });
+    }
+  });
+  updateSearchClearUi(knowledgeSearchBubble, knowledgeSearchClearBtn, false);
+}
+
+if (knowledgeBody) {
+  knowledgeBody.addEventListener("input", (event) => {
+    const field = event.target?.dataset?.knowledgeField;
+    const id = event.target?.dataset?.knowledgeId;
+    if (!field || !id || field === "owners") return;
+    const entry = knowledgeEntries.find((row) => row.id === id);
+    if (!entry || !Object.prototype.hasOwnProperty.call(entry, field)) return;
+    entry[field] = event.target.value;
+    entry.updatedAt = new Date().toISOString();
+    knowledgeRenderKey = knowledgeViewKey();
+    window.MHN_DB?.saveKnowledgeLocal?.(knowledgeEntries);
+    scheduleKnowledgeSave(id);
+  });
+
+  knowledgeBody.addEventListener("click", (event) => {
+    const button = event.target.closest("[data-knowledge-action]");
+    if (!button || !knowledgeBody.contains(button)) return;
+    const id = button.dataset.knowledgeId;
+    if (!id) return;
+    if (button.dataset.knowledgeAction === "expand") {
+      const opening = !knowledgeExpanded.has(id);
+      if (opening) knowledgeExpanded.add(id);
+      else knowledgeExpanded.delete(id);
+      knowledgeRenderKey = "";
+      renderKnowledge();
+      if (opening) {
+        const notes = knowledgeBody.querySelector(
+          `[data-knowledge-id="${id}"][data-knowledge-field="notes"]`
+        );
+        notes?.focus();
+      }
+    } else if (button.dataset.knowledgeAction === "delete") {
+      openKnowledgeDeleteModal(id);
+    } else if (button.dataset.knowledgeAction === "web-edit") {
+      knowledgeWebEditingId = id;
+      knowledgeWebFocus = true;
+      knowledgeRenderKey = "";
+      renderKnowledge();
+    } else if (button.dataset.knowledgeAction === "owner-add") {
+      knowledgeOwnerEditor = { rowId: id, index: -1 };
+      knowledgeOwnerFocus = true;
+      knowledgeRenderKey = "";
+      renderKnowledge();
+    } else if (button.dataset.knowledgeAction === "owner-edit") {
+      knowledgeOwnerEditor = { rowId: id, index: Number(button.dataset.ownerIndex) };
+      knowledgeOwnerFocus = true;
+      knowledgeRenderKey = "";
+      renderKnowledge();
+    } else if (button.dataset.knowledgeAction === "owner-remove") {
+      const entry = knowledgeEntries.find((row) => row.id === id);
+      if (!entry) return;
+      const index = Number(button.dataset.ownerIndex);
+      entry.owners = knowledgeOwnerList(entry.owners).filter((_, ownerIndex) => ownerIndex !== index);
+      if (knowledgeOwnerEditor?.rowId === id) knowledgeOwnerEditor = null;
+      touchKnowledgeEntry(entry);
+      knowledgeRenderKey = "";
+      renderKnowledge();
+    } else if (button.dataset.knowledgeAction === "owner-cancel") {
+      closeKnowledgeOwnerEditor();
+    }
+  });
+
+  knowledgeBody.addEventListener("focusout", (event) => {
+    if (event.target?.dataset?.knowledgeField !== "web") return;
+    const id = event.target.dataset.knowledgeId;
+    if (knowledgeWebEditingId === id) knowledgeWebEditingId = "";
+    const entry = knowledgeEntries.find((row) => row.id === id);
+    if (!String(entry?.web || "").trim()) return;
+    knowledgeRenderKey = "";
+    setTimeout(() => {
+      if (knowledgeWebEditingId === id) return;
+      renderKnowledge();
+    }, 0);
+  });
+
+  knowledgeBody.addEventListener("focusout", () => {
+    if (!knowledgeRefreshQueued) return;
+    requestAnimationFrame(() => {
+      if (document.activeElement?.closest?.(".knowledge-table")) return;
+      if (document.activeElement?.closest?.(".knowledge-owner-form")) return;
+      if (!knowledgeRefreshQueued || knowledgeDirty.size || knowledgeSaveTimer || knowledgeSaveInFlight) return;
+      knowledgeRefreshQueued = false;
+      refreshKnowledgeFromRemote();
+    });
+  });
+
+  knowledgeBody.addEventListener("scroll", () => {
+    if (knowledgeOwnerEditor) placeKnowledgeOwnerPopup();
+  }, { passive: true });
+}
+
+document.addEventListener("pointerdown", (event) => {
+  if (!knowledgeOwnerEditor) return;
+  if (event.target.closest?.(".knowledge-owner-form, .knowledge-owner, .knowledge-owner-add")) return;
+  knowledgeOwnerEditor = null;
+  knowledgeRenderKey = "";
+  setTimeout(() => renderKnowledge(), 0);
+});
+
+knowledgeAddBtn?.addEventListener("click", addKnowledgeEntry);
+document.getElementById("knowledgeDeleteConfirmBtn")?.addEventListener("click", confirmKnowledgeDelete);
+document.getElementById("knowledgeDeleteCancelBtn")?.addEventListener("click", closeKnowledgeDeleteModal);
+document.getElementById("knowledgeDeleteCloseBtn")?.addEventListener("click", closeKnowledgeDeleteModal);
+knowledgeDeleteOverlay?.addEventListener("click", (event) => {
+  if (event.target === knowledgeDeleteOverlay) closeKnowledgeDeleteModal();
+});
+wireKnowledgeSearch();
+window.addEventListener("pagehide", persistKnowledgeNow);
+
 /* ------------------------------ Tabs ---------------------------- */
 
 const navShell = document.getElementById("navShell");
@@ -8176,6 +9043,43 @@ document.addEventListener("click", (e) => {
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape" && navShell?.classList.contains("is-open")) closeNavMenu();
+  if (e.key === "Escape") closeActionsMenu();
+});
+
+const topbarActions = document.getElementById("topbarActions");
+const topbarActionsPanel = document.getElementById("topbarActionsPanel");
+const actionsBurgerBtn = document.getElementById("actionsBurgerBtn");
+
+function closeActionsMenu() {
+  if (!topbarActions || !actionsBurgerBtn) return;
+  topbarActions.classList.remove("is-open");
+  actionsBurgerBtn.setAttribute("aria-expanded", "false");
+  actionsBurgerBtn.setAttribute("aria-label", "Open menu");
+}
+
+function toggleActionsMenu() {
+  if (!topbarActions || !actionsBurgerBtn) return;
+  const willOpen = !topbarActions.classList.contains("is-open");
+  topbarActions.classList.toggle("is-open", willOpen);
+  actionsBurgerBtn.setAttribute("aria-expanded", willOpen ? "true" : "false");
+  actionsBurgerBtn.setAttribute("aria-label", willOpen ? "Close menu" : "Open menu");
+}
+
+if (actionsBurgerBtn) {
+  actionsBurgerBtn.addEventListener("click", (e) => {
+    e.stopPropagation();
+    closeNavMenu();
+    toggleActionsMenu();
+  });
+}
+
+topbarActionsPanel?.addEventListener("click", (e) => {
+  if (e.target.closest("button")) closeActionsMenu();
+});
+
+document.addEventListener("click", (e) => {
+  if (!topbarActions?.classList.contains("is-open")) return;
+  if (!topbarActions.contains(e.target)) closeActionsMenu();
 });
 
 document.querySelectorAll(".tab").forEach((tab) => {
@@ -8199,6 +9103,7 @@ document.querySelectorAll(".tab").forEach((tab) => {
       v.hidden = v.id !== `view-${activeTab}`;
     });
     closeNavMenu();
+    closeActionsMenu();
     render();
   });
 });
@@ -8381,6 +9286,22 @@ async function startApp() {
     deals = loadDeals();
   }
 
+  if (api?.loadKnowledgeAsync) {
+    try {
+      const loaded = await api.loadKnowledgeAsync();
+      // Keep rows created in the moment before cloud load finished.
+      if (!knowledgeEntries.length) {
+        knowledgeEntries = loaded;
+      } else {
+        const seen = new Set(knowledgeEntries.map((row) => row.id));
+        knowledgeEntries = [...loaded.filter((row) => !seen.has(row.id)), ...knowledgeEntries];
+      }
+    } catch (err) {
+      console.error(err);
+      if (!knowledgeEntries.length) knowledgeEntries = api.loadKnowledgeLocal?.() || [];
+    }
+  }
+
   // Persist migrate fixes only when origin allows writes AND cloud is hydrated
   migrateDeals({ persist: Boolean(api?.cloudWriteEnabled) });
   initPipelinePeriod();
@@ -8390,6 +9311,12 @@ async function startApp() {
     api.subscribeToDealChanges(() => {
       if (syncingFromRemote) return;
       refreshDealsFromRemote();
+    });
+  }
+
+  if (api?.subscribeToKnowledgeChanges) {
+    api.subscribeToKnowledgeChanges(() => {
+      refreshKnowledgeFromRemote();
     });
   }
 }

@@ -747,6 +747,262 @@ async function removeContractFile(path) {
   if (error) console.warn("Could not remove previous contract file:", error);
 }
 
+const KNOWLEDGE_STORAGE_KEY = "mhn-sales-knowledge";
+const KNOWLEDGE_PENDING_DELETES_KEY = "mhn-sales-knowledge-pending-deletes";
+/** False after this session learns the knowledge table is missing or unreadable. */
+let knowledgeCloudReady = false;
+
+function parseKnowledgeOwners(value) {
+  if (Array.isArray(value)) return value.map(normalizeKnowledgeOwner).filter(Boolean);
+  const text = String(value ?? "").trim();
+  if (!text) return [];
+  if (text.startsWith("[")) {
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) return parsed.map(normalizeKnowledgeOwner).filter(Boolean);
+    } catch {
+      /* older rows stored a plain name list */
+    }
+  }
+  return text
+    .split(/[,;\n]+/)
+    .map((part) => normalizeKnowledgeOwner({ name: part }))
+    .filter(Boolean);
+}
+
+function normalizeKnowledgeOwner(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const name = String(raw.name ?? "").trim();
+  if (!name) return null;
+  return { name, url: String(raw.url ?? "").trim() };
+}
+
+function serializeKnowledgeOwners(value) {
+  return JSON.stringify(parseKnowledgeOwners(value));
+}
+
+function normalizeKnowledgeEntry(raw) {
+  if (!raw || typeof raw !== "object") return null;
+  const id = String(raw.id || "").trim();
+  if (!id) return null;
+  const createdAt = raw.createdAt || raw.created_at || new Date().toISOString();
+  return {
+    id,
+    web: String(raw.web ?? ""),
+    founded: String(raw.founded ?? ""),
+    size: String(raw.size ?? ""),
+    valuation: String(raw.valuation ?? ""),
+    origin: String(raw.origin ?? ""),
+    market: String(raw.market ?? ""),
+    owners: parseKnowledgeOwners(raw.owners),
+    notes: String(raw.notes ?? ""),
+    createdAt,
+    updatedAt: raw.updatedAt || raw.updated_at || createdAt,
+  };
+}
+
+function sortKnowledgeEntries(rows) {
+  return [...rows].sort((a, b) => {
+    const aTime = Date.parse(a.createdAt) || 0;
+    const bTime = Date.parse(b.createdAt) || 0;
+    if (aTime !== bTime) return aTime - bTime;
+    return a.id.localeCompare(b.id);
+  });
+}
+
+function loadKnowledgeLocal() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(KNOWLEDGE_STORAGE_KEY) || "[]");
+    if (!Array.isArray(raw)) return [];
+    return sortKnowledgeEntries(raw.map(normalizeKnowledgeEntry).filter(Boolean));
+  } catch {
+    return [];
+  }
+}
+
+function saveKnowledgeLocal(rows) {
+  try {
+    localStorage.setItem(
+      KNOWLEDGE_STORAGE_KEY,
+      JSON.stringify(sortKnowledgeEntries((rows || []).map(normalizeKnowledgeEntry).filter(Boolean)))
+    );
+  } catch {
+    /* ignore quota / private mode */
+  }
+}
+
+function knowledgeToDbRow(entry) {
+  return {
+    id: entry.id,
+    web: entry.web || "",
+    founded: entry.founded || "",
+    size: entry.size || "",
+    valuation: entry.valuation || "",
+    origin: entry.origin || "",
+    market: entry.market || "",
+    owners: serializeKnowledgeOwners(entry.owners),
+    notes: entry.notes || "",
+    created_at: entry.createdAt || new Date().toISOString(),
+    updated_at: entry.updatedAt || new Date().toISOString(),
+  };
+}
+
+function isMissingKnowledgeTable(error) {
+  const code = String(error?.code || "");
+  const msg = `${error?.message || ""} ${error?.details || ""}`.toLowerCase();
+  return (
+    code === "42P01" ||
+    code === "PGRST205" ||
+    (msg.includes("knowledge") &&
+      (msg.includes("does not exist") || msg.includes("schema cache") || msg.includes("could not find")))
+  );
+}
+
+function knowledgeWritesEnabled() {
+  return Boolean(db) && cloudWriteAllowedByOrigin && cloudHydrated && knowledgeCloudReady;
+}
+
+async function fetchKnowledgeRows() {
+  const { data, error } = await db
+    .from("knowledge")
+    .select("*")
+    .order("created_at", { ascending: true });
+  if (error) throw error;
+  knowledgeCloudReady = true;
+  return sortKnowledgeEntries((data || []).map(normalizeKnowledgeEntry).filter(Boolean));
+}
+
+async function loadKnowledgeAsync() {
+  const local = loadKnowledgeLocal();
+  if (!db) {
+    knowledgeCloudReady = false;
+    return local;
+  }
+
+  let remote;
+  try {
+    remote = await fetchKnowledgeRows();
+  } catch (err) {
+    knowledgeCloudReady = false;
+    if (isMissingKnowledgeTable(err)) {
+      console.warn("Knowledge table is missing in Supabase — keeping entries on this device. Run supabase/sync_schema.sql.");
+    } else {
+      console.warn("Failed to load knowledge from Supabase, using local entries:", err);
+    }
+    return local;
+  }
+
+  const pendingDeletes = new Set(readIdList(KNOWLEDGE_PENDING_DELETES_KEY));
+  let rows = remote.filter((row) => !pendingDeletes.has(row.id));
+
+  if (knowledgeWritesEnabled()) {
+    for (const id of pendingDeletes) {
+      const { error } = await db.from("knowledge").delete().eq("id", id);
+      if (!error) pendingDeletes.delete(id);
+    }
+    writeIdList(KNOWLEDGE_PENDING_DELETES_KEY, [...pendingDeletes]);
+
+    const remoteById = new Map(rows.map((row) => [row.id, row]));
+    const toPush = [];
+    for (const row of local) {
+      if (pendingDeletes.has(row.id)) continue;
+      const existing = remoteById.get(row.id);
+      if (!existing) {
+        toPush.push(row);
+        continue;
+      }
+      const localTime = Date.parse(row.updatedAt) || 0;
+      const remoteTime = Date.parse(existing.updatedAt) || 0;
+      if (localTime > remoteTime) toPush.push(row);
+    }
+    if (toPush.length) {
+      const { error } = await db.from("knowledge").upsert(toPush.map(knowledgeToDbRow), { onConflict: "id" });
+      if (error) {
+        console.warn("Could not upload local knowledge entries:", error);
+      } else {
+        const pushed = new Map(toPush.map((row) => [row.id, row]));
+        rows = sortKnowledgeEntries([
+          ...rows.filter((row) => !pushed.has(row.id)),
+          ...toPush,
+        ]);
+      }
+    }
+  }
+
+  saveKnowledgeLocal(rows);
+  return rows;
+}
+
+async function fetchKnowledgeAsync() {
+  if (!db || !knowledgeCloudReady) return null;
+  return fetchKnowledgeRows();
+}
+
+async function saveKnowledgeAsync(rowsToWrite, allRows) {
+  const cache = Array.isArray(allRows) ? allRows : rowsToWrite;
+  saveKnowledgeLocal(cache);
+  const toWrite = (rowsToWrite || []).map(normalizeKnowledgeEntry).filter(Boolean);
+  if (!toWrite.length || !knowledgeWritesEnabled()) {
+    return { wroteToCloud: false };
+  }
+  const { error } = await db.from("knowledge").upsert(toWrite.map(knowledgeToDbRow), { onConflict: "id" });
+  if (error) {
+    if (isMissingKnowledgeTable(error)) knowledgeCloudReady = false;
+    console.error("Failed to save knowledge:", error);
+    throw error;
+  }
+  return { wroteToCloud: true };
+}
+
+async function deleteKnowledgeAsync(id, allRows) {
+  if (Array.isArray(allRows)) saveKnowledgeLocal(allRows);
+  if (!id) return { wroteToCloud: false };
+  if (!knowledgeWritesEnabled()) {
+    if (cloudWriteAllowedByOrigin && cloudHydrated && knowledgeCloudReady === false) {
+      return { wroteToCloud: false, reason: "no-table" };
+    }
+    if (cloudWriteAllowedByOrigin && !knowledgeCloudReady) {
+      return { wroteToCloud: false };
+    }
+    // Writable origin that isn't hydrated yet still needs the delete to land later.
+    if (cloudWriteAllowedByOrigin) {
+      const ids = readIdList(KNOWLEDGE_PENDING_DELETES_KEY);
+      if (!ids.includes(id)) writeIdList(KNOWLEDGE_PENDING_DELETES_KEY, [...ids, id]);
+    }
+    return { wroteToCloud: false, writeBlocked: !knowledgeWritesEnabled() };
+  }
+  const { error } = await db.from("knowledge").delete().eq("id", id);
+  if (error) {
+    if (isMissingKnowledgeTable(error)) knowledgeCloudReady = false;
+    const ids = readIdList(KNOWLEDGE_PENDING_DELETES_KEY);
+    if (!ids.includes(id)) writeIdList(KNOWLEDGE_PENDING_DELETES_KEY, [...ids, id]);
+    console.error("Failed to delete knowledge entry:", error);
+    throw error;
+  }
+  writeIdList(
+    KNOWLEDGE_PENDING_DELETES_KEY,
+    readIdList(KNOWLEDGE_PENDING_DELETES_KEY).filter((pendingId) => pendingId !== id)
+  );
+  return { wroteToCloud: true };
+}
+
+function subscribeToKnowledgeChanges(onChange) {
+  if (!db) return () => {};
+  const channel = db
+    .channel("mhn-knowledge")
+    .on(
+      "postgres_changes",
+      { event: "*", schema: "public", table: "knowledge" },
+      () => {
+        onChange();
+      }
+    )
+    .subscribe();
+  return () => {
+    db.removeChannel(channel);
+  };
+}
+
 window.MHN_DB = {
   client: db,
   isRemote: Boolean(db),
@@ -773,6 +1029,14 @@ window.MHN_DB = {
   saveDealsAsync,
   deleteDealAsync,
   subscribeToDealChanges,
+  loadKnowledgeLocal,
+  loadKnowledgeAsync,
+  fetchKnowledgeAsync,
+  saveKnowledgeLocal,
+  saveKnowledgeAsync,
+  deleteKnowledgeAsync,
+  parseKnowledgeOwners,
+  subscribeToKnowledgeChanges,
   uploadContractFile,
   getContractFilePreviewUrl,
   removeContractFile,

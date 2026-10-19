@@ -163,6 +163,40 @@ exception
   when duplicate_object then null;
 end $$;
 
+-- Knowledge tab: shared company reference rows
+create table if not exists public.knowledge (
+  id uuid primary key default gen_random_uuid(),
+  web text not null default '',
+  founded text not null default '',
+  size text not null default '',
+  valuation text not null default '',
+  origin text not null default '',
+  market text not null default '',
+  owners text not null default '',
+  notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+alter table public.knowledge add column if not exists owners text not null default '';
+
+alter table public.knowledge enable row level security;
+
+drop policy if exists "Authenticated users full access" on public.knowledge;
+create policy "Authenticated users full access"
+  on public.knowledge
+  for all
+  to authenticated
+  using (true)
+  with check (true);
+
+do $$
+begin
+  alter publication supabase_realtime add table public.knowledge;
+exception
+  when duplicate_object then null;
+end $$;
+
 -- Optional: inspect what columns production actually has after running this.
 -- Uncomment and run separately if you want a checklist:
 --

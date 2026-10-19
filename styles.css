@@ -254,6 +254,97 @@ body {
   align-items: center;
   gap: 12px;
   margin-left: auto;
+  position: relative;
+}
+
+.topbar-actions .actions-burger {
+  display: inline-flex;
+  margin-left: 0;
+  flex-shrink: 0;
+}
+
+.topbar-actions-panel {
+  display: none;
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 40;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 2px;
+  min-width: 200px;
+  padding: 8px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lift);
+}
+
+.topbar-actions.is-open .topbar-actions-panel {
+  display: flex;
+}
+
+.topbar-actions.is-open .actions-burger {
+  background: var(--bg-sunken);
+  border-color: var(--accent);
+}
+
+.topbar:has(.topbar-actions.is-open) {
+  z-index: 40;
+}
+
+.topbar-actions-panel .user-chip {
+  flex-direction: column;
+  align-items: stretch;
+  max-width: none;
+  width: 100%;
+  gap: 2px;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.topbar-actions-panel .user-chip-label {
+  padding: 8px 12px 6px;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.topbar-actions-panel .user-chip-logout,
+.topbar-actions-panel .import-btn {
+  width: 100%;
+  justify-content: flex-start;
+  text-align: left;
+  border: none;
+  background: transparent;
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  font-size: 14px;
+  color: var(--ink);
+  box-shadow: none;
+}
+
+.topbar-actions-panel .user-chip-logout:hover,
+.topbar-actions-panel .import-btn:hover {
+  background: var(--bg-sunken);
+  color: var(--ink);
+}
+
+.topbar-actions-panel #logoutBtn {
+  color: var(--danger);
+}
+
+.topbar-actions-panel #logoutBtn:hover {
+  background: #f7e8e5;
+  color: var(--danger);
+}
+
+.topbar-actions-panel .import-btn {
+  border-top: 1px solid var(--line);
+  margin-top: 4px;
+  border-radius: 0;
+  padding-top: 12px;
 }
 
 .user-chip {
@@ -405,6 +496,8 @@ body {
   padding: 8px 16px;
   border-radius: 999px;
   cursor: pointer;
+  flex-shrink: 0;
+  white-space: nowrap;
   transition: background 0.15s ease, color 0.15s ease;
 }
 
@@ -4573,6 +4666,21 @@ body.is-card-dragging .card {
     margin-left: 0;
   }
 
+  .actions-burger {
+    display: none !important;
+  }
+
+  .topbar-actions-panel,
+  .topbar-actions.is-open .topbar-actions-panel {
+    display: contents;
+    position: static;
+    min-width: 0;
+    padding: 0;
+    background: none;
+    border: none;
+    box-shadow: none;
+  }
+
   .nav-shell.is-open .nav-burger {
     background: var(--bg-sunken);
     border-color: var(--accent);
@@ -5204,16 +5312,18 @@ body.is-card-dragging .card {
 
 @media (max-width: 720px) {
   /* Secondary FAB, stacked above the New deal button */
-  .import-btn {
+  .topbar-actions .import-btn {
     position: fixed;
     right: max(32px, calc(env(safe-area-inset-right) + 22px));
     bottom: max(104px, calc(env(safe-area-inset-bottom) + 92px));
     z-index: 35;
     width: 48px;
     height: 48px;
+    margin: 0;
     padding: 0;
     border-radius: 50%;
     justify-content: center;
+    text-align: center;
     gap: 0;
     background: var(--surface);
     border: 1px solid var(--line);
@@ -5244,5 +5354,382 @@ body.is-card-dragging .card {
 
   .import-table-wrap {
     max-height: 44vh;
+  }
+}
+
+/* ------------------------------ Knowledge ----------------------- */
+
+.knowledge-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 0 28px var(--board-gap);
+  min-width: 0;
+}
+
+.knowledge-toolbar .search-input {
+  width: 168px;
+}
+
+.knowledge-add {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: var(--toolbar-control-height);
+  padding: 0 14px;
+  flex-shrink: 0;
+  line-height: 1;
+}
+
+#view-knowledge {
+  min-width: 0;
+}
+
+.knowledge-body {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+  overflow: auto;
+  padding: 0 28px 28px;
+  -webkit-overflow-scrolling: touch;
+}
+
+.knowledge-empty {
+  margin: 8px 0 0;
+  color: var(--ink-faint);
+  font-size: 14px;
+}
+
+.knowledge-table-wrap {
+  width: max-content;
+  max-width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  background: var(--surface);
+  box-shadow: var(--shadow-card);
+  scrollbar-width: thin;
+  scrollbar-color: #d5d2c6 transparent;
+}
+
+.knowledge-table {
+  width: 1000px;
+  border-collapse: separate;
+  border-spacing: 0;
+  font-size: 14px;
+  table-layout: fixed;
+}
+
+.knowledge-table thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 10px 8px;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--line);
+  text-align: left;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  white-space: nowrap;
+}
+
+.knowledge-table td {
+  padding: 0;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+  background: var(--surface);
+}
+
+.knowledge-table tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.knowledge-table tr.is-open td {
+  border-bottom-color: transparent;
+  background: var(--bg);
+}
+
+.knowledge-col-web { width: 148px; }
+.knowledge-col-founded { width: 76px; }
+.knowledge-col-size { width: 88px; }
+.knowledge-col-valuation { width: 96px; }
+.knowledge-col-origin { width: 120px; }
+.knowledge-col-market { width: 96px; }
+.knowledge-col-owners { width: 288px; }
+
+.knowledge-web {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  min-height: 40px;
+  padding: 4px 4px 4px 8px;
+}
+
+.knowledge-web-link,
+.knowledge-web-text,
+.knowledge-owner-link,
+.knowledge-owner-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #3a6f96;
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+.knowledge-web-link,
+.knowledge-owner-link {
+  text-decoration: underline;
+  text-decoration-color: #b7cddd;
+  text-underline-offset: 2px;
+}
+
+.knowledge-web-link {
+  flex: 1;
+}
+
+.knowledge-web-link:hover,
+.knowledge-owner-link:hover {
+  color: #2c5878;
+  text-decoration-color: #2c5878;
+}
+
+.knowledge-owners {
+  display: flex;
+  flex-wrap: nowrap;
+  align-items: center;
+  gap: 4px;
+  min-height: 40px;
+  min-width: 0;
+  padding: 6px 8px;
+  overflow: hidden;
+}
+
+.knowledge-owner {
+  display: inline-flex;
+  align-items: center;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 100%;
+  padding: 1px 1px 1px 8px;
+  border-radius: 999px;
+  background: var(--bg-sunken);
+}
+
+.knowledge-owner-link,
+.knowledge-owner-name {
+  font-size: 13px;
+}
+
+.knowledge-inline-btn {
+  appearance: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.knowledge-inline-btn:hover {
+  color: var(--ink);
+  background: var(--bg);
+}
+
+.knowledge-owner-remove:hover {
+  color: var(--danger);
+}
+
+.knowledge-owner-add {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.knowledge-inline-icon {
+  width: 13px;
+  height: 13px;
+}
+
+.knowledge-owner-form {
+  position: fixed;
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 240px;
+  margin: 0;
+  padding: 12px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lift);
+}
+
+.knowledge-owner-input {
+  width: 100%;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  line-height: 1.4;
+  padding: 6px 8px;
+  outline: none;
+}
+
+.knowledge-owner-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.knowledge-owner-error {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.knowledge-owner-form-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.knowledge-owner-form-actions .btn-sm {
+  padding: 5px 10px;
+  font-size: 12px;
+}
+
+.knowledge-cell-input {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink);
+  padding: 10px 8px;
+}
+
+.knowledge-cell-input::placeholder {
+  color: var(--ink-faint);
+}
+
+.knowledge-cell-input:focus {
+  background: var(--bg);
+  box-shadow: inset 0 0 0 2px var(--accent-soft);
+}
+
+.knowledge-col-expand,
+.knowledge-col-delete {
+  width: 44px;
+  padding: 0 !important;
+  text-align: center;
+  vertical-align: middle;
+}
+
+.knowledge-expand,
+.knowledge-delete {
+  appearance: none;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  margin: 6px;
+  padding: 0;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+.knowledge-expand:hover {
+  color: var(--ink);
+  background: var(--bg-sunken);
+}
+
+.knowledge-delete:hover {
+  color: var(--danger);
+  background: #f7e8e5;
+}
+
+.knowledge-expand:focus-visible,
+.knowledge-delete:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.knowledge-expand-icon,
+.knowledge-delete-icon {
+  width: 16px;
+  height: 16px;
+  flex-shrink: 0;
+}
+
+.knowledge-expand-icon {
+  transition: transform 0.15s ease;
+}
+
+.knowledge-expand[aria-expanded="true"] .knowledge-expand-icon {
+  transform: rotate(180deg);
+}
+
+.knowledge-notes-row td {
+  padding: 0 12px 12px;
+  background: var(--bg-sunken);
+  border-bottom: 1px solid var(--line);
+}
+
+.knowledge-notes {
+  display: block;
+  width: 100%;
+  min-height: 88px;
+  resize: vertical;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.45;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 10px 12px;
+  outline: none;
+}
+
+.knowledge-notes::placeholder {
+  color: var(--ink-faint);
+}
+
+.knowledge-notes:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+@media (max-width: 720px) {
+  .knowledge-toolbar,
+  .knowledge-body {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+
+  .knowledge-toolbar .search-input {
+    width: 0;
   }
 }
