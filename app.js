@@ -103,6 +103,8 @@ const pipelineRowsEl = document.getElementById("pipelineRows");
 const overlay = document.getElementById("modalOverlay");
 const form = document.getElementById("dealForm");
 const modalTitle = document.getElementById("modalTitle");
+const modalTitleMeta = document.getElementById("modalTitleMeta");
+const modalTitleCompany = document.getElementById("modalTitleCompany");
 const modalTitleTool = document.getElementById("modalTitleTool");
 const saveBtn = document.getElementById("saveBtn");
 const deleteBtn = document.getElementById("dismissDealBtn");
@@ -1564,7 +1566,10 @@ function selectFieldSuggestion(fieldKey, name) {
   state.input.value = name;
   closeFieldSuggestions(fieldKey);
   state.input.focus();
-  if (fieldKey === "company") renderCompanyHistory();
+  if (fieldKey === "company") {
+    applySharedCompanyProfile(name);
+    renderCompanyHistory();
+  }
 }
 
 function highlightFieldSuggestion(fieldKey, index) {
@@ -4795,9 +4800,13 @@ function serializeModalTasks() {
 }
 
 function updateModalTitleTool() {
+  const company = form.elements.company.value.trim();
   const tool = form.elements.tool.value.trim();
+  modalTitleCompany.hidden = !company;
+  modalTitleCompany.textContent = company;
   modalTitleTool.hidden = !tool;
   modalTitleTool.textContent = tool;
+  modalTitleMeta.hidden = !company && !tool;
 }
 
 function companyHistoryStageLabel(deal) {
@@ -6529,6 +6538,7 @@ function openModal({
     form.elements.owner.value = deal.owner || "";
     dealBriefInput.value = briefNoteText(deal.notes);
     dealValueInput.value = valueNoteText(deal.notes);
+    applySharedCompanyProfile(deal.company);
 
     const showImplementation =
       deal.stage === "committed" || deal.stage === "paid" || deal.stage === "failed";
@@ -6784,6 +6794,132 @@ async function confirmPendingDraft() {
   }
 }
 
+function dealsSharingCompany(name) {
+  const key = normalizeCompanyKey(name);
+  if (!key) return [];
+  return deals.filter((deal) => normalizeCompanyKey(deal.company) === key);
+}
+
+function latestFilledCompanyField(related, read) {
+  let best = "";
+  let bestTime = -1;
+  for (const deal of related) {
+    const value = String(read(deal) || "").trim();
+    if (!value) continue;
+    const time = Number(deal.createdAt) || 0;
+    if (time >= bestTime) {
+      best = value;
+      bestTime = time;
+    }
+  }
+  return best;
+}
+
+function latestKindNoteText(related, kind) {
+  let best = "";
+  let bestTime = -1;
+  for (const deal of related) {
+    const note = (deal.notes || []).find((item) => item?.kind === kind);
+    const text = String(note?.text || "").trim();
+    if (!text) continue;
+    const time = Number(note.updatedAt || note.createdAt || 0);
+    if (time >= bestTime) {
+      best = text;
+      bestTime = time;
+    }
+  }
+  return best;
+}
+
+function sharedCompanyProfile(name) {
+  const related = dealsSharingCompany(name);
+  if (!related.length) return null;
+  return {
+    company: latestFilledCompanyField(related, (deal) => deal.company),
+    contact: latestFilledCompanyField(related, (deal) => deal.contact),
+    phone: latestFilledCompanyField(related, (deal) => deal.phone),
+    email: latestFilledCompanyField(related, (deal) => deal.email),
+    industry: latestFilledCompanyField(related, (deal) => deal.industry),
+    brief: latestKindNoteText(related, BRIEF_NOTE_KIND),
+    value: latestKindNoteText(related, VALUE_NOTE_KIND),
+  };
+}
+
+function applySharedCompanyProfile(name) {
+  const profile = sharedCompanyProfile(name);
+  if (!profile) return;
+  if (profile.company) form.elements.company.value = profile.company;
+  form.elements.contact.value = profile.contact;
+  form.elements.phone.value = profile.phone;
+  form.elements.email.value = profile.email;
+  form.elements.industry.value = profile.industry;
+  dealBriefInput.value = profile.brief;
+  dealValueInput.value = profile.value;
+  updateModalTitleTool();
+}
+
+function setDealKindNote(deal, kind, text) {
+  if (!Array.isArray(deal.notes)) deal.notes = [];
+  const trimmed = String(text || "").trim();
+  const existing = deal.notes.find((note) => note?.kind === kind);
+  if (!trimmed) {
+    if (!existing) return false;
+    deal.notes = deal.notes.filter((note) => note !== existing);
+    return true;
+  }
+  if (existing) {
+    if (existing.text === trimmed) return false;
+    existing.text = trimmed;
+    existing.updatedAt = Date.now();
+    existing.updatedBy = stampCurrentUser(existing.createdBy);
+    return true;
+  }
+  deal.notes.push({
+    id: crypto.randomUUID(),
+    kind,
+    text: trimmed,
+    createdAt: Date.now(),
+    updatedAt: null,
+    createdBy: stampCurrentUser(),
+    updatedBy: "",
+  });
+  return true;
+}
+
+function writeSharedCompanyProfile(profile) {
+  const key = normalizeCompanyKey(profile.company);
+  if (!key) return [];
+  const changed = [];
+  for (const deal of deals) {
+    if (normalizeCompanyKey(deal.company) !== key) continue;
+    let dirty = false;
+    if ((deal.company || "") !== profile.company) {
+      deal.company = profile.company;
+      dirty = true;
+    }
+    if ((deal.contact || "") !== profile.contact) {
+      deal.contact = profile.contact;
+      dirty = true;
+    }
+    if ((deal.phone || "") !== profile.phone) {
+      deal.phone = profile.phone;
+      dirty = true;
+    }
+    if ((deal.email || "") !== profile.email) {
+      deal.email = profile.email;
+      dirty = true;
+    }
+    if ((deal.industry || "") !== profile.industry) {
+      deal.industry = profile.industry;
+      dirty = true;
+    }
+    if (setDealKindNote(deal, BRIEF_NOTE_KIND, profile.brief)) dirty = true;
+    if (setDealKindNote(deal, VALUE_NOTE_KIND, profile.value)) dirty = true;
+    if (dirty) changed.push(deal.id);
+  }
+  return changed;
+}
+
 async function saveDealFromForm() {
   if (editingId) {
     const existing = deals.find((d) => d.id === editingId);
@@ -6856,6 +6992,7 @@ async function saveDealFromForm() {
     })),
   };
 
+  let savedDealId = null;
   if (editingId) {
     const deal = deals.find((d) => d.id === editingId);
     Object.assign(deal, data);
@@ -6892,7 +7029,7 @@ async function saveDealFromForm() {
         return;
       }
     }
-    saveDeals(deal.id);
+    savedDealId = deal.id;
   } else {
     const createdAt = Date.now();
     const newDeal = {
@@ -6913,8 +7050,32 @@ async function saveDealFromForm() {
     if (createStage === "interested") newDeal.interestedAt = createdAt;
     if (createStage === "committed" || createStage === "paid") newDeal.committedEnteredAt = createdAt;
     deals.push(newDeal);
-    saveDeals(newDeal.id);
+    savedDealId = newDeal.id;
   }
+
+  const profile = {
+    company: data.company,
+    contact: data.contact,
+    phone: data.phone,
+    email: data.email,
+    industry: data.industry,
+    brief: briefNoteText(data.notes),
+    value: valueNoteText(data.notes),
+  };
+  if (!editingId) {
+    const existing = sharedCompanyProfile(profile.company);
+    if (existing) {
+      if (!profile.contact) profile.contact = existing.contact;
+      if (!profile.phone) profile.phone = existing.phone;
+      if (!profile.email) profile.email = existing.email;
+      if (!profile.industry) profile.industry = existing.industry;
+      if (!profile.brief) profile.brief = existing.brief;
+      if (!profile.value) profile.value = existing.value;
+      if (existing.company) profile.company = existing.company;
+    }
+  }
+  const mirrored = writeSharedCompanyProfile(profile);
+  saveDeals([savedDealId, ...mirrored]);
 
   render();
   closeModal();
@@ -6977,6 +7138,7 @@ form.addEventListener("submit", async (e) => {
 
 form.elements.tool.addEventListener("input", updateModalTitleTool);
 form.elements.company.addEventListener("input", () => {
+  updateModalTitleTool();
   if (!companyHistoryFields.hidden) renderCompanyHistory();
 });
 
