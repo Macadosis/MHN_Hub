@@ -8438,7 +8438,7 @@ function deleteKnowledgeEntry(id) {
 
 function fitKnowledgeNotes(textarea) {
   if (!textarea) return;
-  textarea.style.height = "auto";
+  textarea.style.height = "0px";
   const border = textarea.offsetHeight - textarea.clientHeight;
   textarea.style.height = `${textarea.scrollHeight + border}px`;
 }
