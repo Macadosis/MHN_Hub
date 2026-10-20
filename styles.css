@@ -5408,6 +5408,7 @@ body.is-card-dragging .card {
   border-radius: var(--radius-md);
   background: var(--surface);
   box-shadow: var(--shadow-card);
+  overflow: hidden;
   scrollbar-width: thin;
   scrollbar-color: #d5d2c6 transparent;
 }
@@ -5436,6 +5437,14 @@ body.is-card-dragging .card {
   white-space: nowrap;
 }
 
+.knowledge-table thead th:first-child {
+  border-top-left-radius: var(--radius-md);
+}
+
+.knowledge-table thead th:last-child {
+  border-top-right-radius: var(--radius-md);
+}
+
 .knowledge-table td {
   padding: 0;
   border-bottom: 1px solid var(--line);
@@ -5445,6 +5454,14 @@ body.is-card-dragging .card {
 
 .knowledge-table tbody tr:last-child td {
   border-bottom: none;
+}
+
+.knowledge-table tbody tr:last-child td:first-child {
+  border-bottom-left-radius: var(--radius-md);
+}
+
+.knowledge-table tbody tr:last-child td:last-child {
+  border-bottom-right-radius: var(--radius-md);
 }
 
 .knowledge-table tr.is-open td {
