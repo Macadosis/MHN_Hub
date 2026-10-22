@@ -687,13 +687,62 @@ const CONTRACTS_BUCKET = "contracts";
 const CONTRACT_SIGNED_URL_SECONDS = 60 * 60; // 1 hour
 const CONTRACT_MAX_BYTES = 20 * 1024 * 1024;
 
+// Storage object keys reject anything outside this ASCII set ("Invalid key").
+// https://supabase.com/docs/guides/storage/uploads/file-limits
+const STORAGE_KEY_UNSAFE = /[^A-Za-z0-9_!'()&.@$=;:+?*, -]/g;
+const STORAGE_KEY_FOLD = {
+  æ: "ae",
+  Æ: "AE",
+  œ: "oe",
+  Œ: "OE",
+  ø: "o",
+  Ø: "O",
+  ł: "l",
+  Ł: "L",
+  đ: "d",
+  Đ: "D",
+  ð: "d",
+  Ð: "D",
+  þ: "th",
+  Þ: "Th",
+  ß: "ss",
+  ħ: "h",
+  Ħ: "H",
+  ŋ: "n",
+  Ŋ: "N",
+  ĸ: "k",
+  ı: "i",
+  İ: "I",
+};
+
+function foldStorageKeyText(value) {
+  return String(value || "")
+    .replace(/[æÆœŒøØłŁđĐðÐþÞßħĦŋŊĸıİ]/g, (ch) => STORAGE_KEY_FOLD[ch] || ch)
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "");
+}
+
 function sanitizeContractFileName(name) {
-  const base = String(name || "contract")
-    .trim()
-    .replace(/[/\\?%*:|"<>]/g, "-")
+  const raw = String(name || "").trim();
+  const extMatch = raw.match(/(\.[^./\\]{1,12})$/);
+  const foldedExt = extMatch
+    ? foldStorageKeyText(extMatch[1]).replace(/[^A-Za-z0-9.]/g, "")
+    : "";
+  const safeExt = /^\.[A-Za-z0-9]{1,8}$/.test(foldedExt) ? foldedExt : "";
+  const stem = safeExt ? raw.slice(0, -extMatch[1].length) : raw;
+  let safe = foldStorageKeyText(stem)
     .replace(/\s+/g, " ")
-    .slice(0, 120);
-  return base || "contract.pdf";
+    .replace(STORAGE_KEY_UNSAFE, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[\s.-]+|[\s.-]+$/g, "");
+  safe = safe.slice(0, Math.max(1, 120 - safeExt.length)).replace(/[\s.-]+$/g, "");
+  if (!safe) safe = "contract";
+  return safe + (safeExt || (safe === "contract" ? ".pdf" : ""));
+}
+
+function originalContractFileName(name) {
+  const text = String(name || "").trim();
+  return text || "contract.pdf";
 }
 
 function isAllowedContractFile(file) {
@@ -720,7 +769,8 @@ async function uploadContractFile(dealId, file) {
     throw new Error("Choose a PDF or Word file under 20 MB");
   }
 
-  const safeName = sanitizeContractFileName(file.name);
+  const fileName = originalContractFileName(file.name);
+  const safeName = sanitizeContractFileName(fileName);
   const path = `${dealId}/${Date.now()}-${safeName}`;
   const { error } = await db.storage.from(CONTRACTS_BUCKET).upload(path, file, {
     cacheControl: "3600",
@@ -728,16 +778,23 @@ async function uploadContractFile(dealId, file) {
     contentType: file.type || "application/pdf",
   });
   if (error) throw error;
-  return { path, fileName: safeName };
+  return { path, fileName };
 }
 
-async function getContractFilePreviewUrl(path) {
+async function getContractFilePreviewUrl(path, fileName) {
   if (!db || !path) return null;
   const { data, error } = await db.storage
     .from(CONTRACTS_BUCKET)
     .createSignedUrl(path, CONTRACT_SIGNED_URL_SECONDS);
   if (error) throw error;
-  return data?.signedUrl || null;
+  const signedUrl = data?.signedUrl || "";
+  if (!signedUrl) return null;
+  const downloadName = String(fileName || "").replace(/[\u0000-\u001f\u007f]/g, "").trim();
+  if (!downloadName) return signedUrl;
+  // The SDK encodes `download` and then encodeURI() encodes the percent
+  // signs again, so a Lithuanian name would be saved percent-encoded.
+  const joiner = signedUrl.includes("?") ? "&" : "?";
+  return `${signedUrl}${joiner}download=${encodeURIComponent(downloadName)}`;
 }
 
 async function removeContractFile(path) {
