@@ -4394,7 +4394,7 @@ async function openContractPreview({ pendingFile = null, path = "", fileName = "
     return;
   }
   try {
-    const url = await api.getContractFilePreviewUrl(path);
+    const url = await api.getContractFilePreviewUrl(path, fileName);
     if (!url) throw new Error("No preview URL");
     window.open(url, "_blank", "noopener,noreferrer");
   } catch (err) {
