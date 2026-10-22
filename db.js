@@ -687,13 +687,33 @@ const CONTRACTS_BUCKET = "contracts";
 const CONTRACT_SIGNED_URL_SECONDS = 60 * 60; // 1 hour
 const CONTRACT_MAX_BYTES = 20 * 1024 * 1024;
 
-function sanitizeContractFileName(name) {
+/** Name shown in the app. Lithuanian letters stay here. */
+function displayContractFileName(name) {
   const base = String(name || "contract")
     .trim()
     .replace(/[/\\?%*:|"<>]/g, "-")
     .replace(/\s+/g, " ")
-    .slice(0, 120);
+    .slice(0, 180);
   return base || "contract.pdf";
+}
+
+/**
+ * Supabase Storage keys accept only Latin letters, digits, and a few symbols.
+ * ė, į, š and other letters are folded to ASCII for the stored path only.
+ */
+function storageContractFileName(name) {
+  const display = displayContractFileName(name);
+  const extMatch = display.match(/(\.[A-Za-z0-9]{1,8})$/);
+  const ext = extMatch ? extMatch[1].toLowerCase() : "";
+  const stem = ext ? display.slice(0, -ext.length) : display;
+  const ascii = stem
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^A-Za-z0-9._-]+/g, "-")
+    .replace(/-+/g, "-")
+    .replace(/^[-.]+|[-.]+$/g, "")
+    .slice(0, 80);
+  return `${ascii || "file"}${ext}`;
 }
 
 function isAllowedContractFile(file) {
@@ -720,22 +740,27 @@ async function uploadContractFile(dealId, file) {
     throw new Error("Choose a PDF or Word file under 20 MB");
   }
 
-  const safeName = sanitizeContractFileName(file.name);
-  const path = `${dealId}/${Date.now()}-${safeName}`;
+  const fileName = displayContractFileName(file.name);
+  const path = `${dealId}/${Date.now()}-${storageContractFileName(file.name)}`;
   const { error } = await db.storage.from(CONTRACTS_BUCKET).upload(path, file, {
     cacheControl: "3600",
     upsert: false,
     contentType: file.type || "application/pdf",
   });
   if (error) throw error;
-  return { path, fileName: safeName };
+  return { path, fileName };
 }
 
-async function getContractFilePreviewUrl(path) {
+async function getContractFilePreviewUrl(path, fileName = "") {
   if (!db || !path) return null;
+  const downloadName = String(fileName || "").trim();
   const { data, error } = await db.storage
     .from(CONTRACTS_BUCKET)
-    .createSignedUrl(path, CONTRACT_SIGNED_URL_SECONDS);
+    .createSignedUrl(
+      path,
+      CONTRACT_SIGNED_URL_SECONDS,
+      downloadName ? { download: downloadName } : undefined
+    );
   if (error) throw error;
   return data?.signedUrl || null;
 }
