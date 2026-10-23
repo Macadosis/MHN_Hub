@@ -50,6 +50,7 @@ const tasksCalendarState = {
 };
 const tasksPipelineState = {
   periodMonths: 1,
+  selectedWeekStart: null,
 };
 const TASKS_PIPELINE_LOOKBACK_DAYS = 7;
 const TASKS_PIPELINE_LABEL_MAX = 20;
@@ -67,8 +68,8 @@ const PIPELINE_MIN_MONTH_LABEL_DAYS = 10;
 /** Same-company tasks farther apart than this start a new packed cluster. */
 const TASKS_PIPELINE_COMPANY_CLUSTER_GAP_DAYS = 7;
 const TASKS_PIPELINE_COMPANY_TONES = ["sage", "lavender", "sky", "sand", "peach", "rose"];
-/** Space reserved beside a bubble for the day-offset so neighbors don’t crush it. */
-const TASKS_PIPELINE_OFFSET_RESERVE_PX = 22;
+/** Space reserved beside a bubble for the day-offset (weekday sits under it). */
+const TASKS_PIPELINE_OFFSET_RESERVE_PX = 28;
 const TASK_TYPES = [
   { id: "email", label: "Email" },
   { id: "call", label: "Call" },
@@ -169,6 +170,7 @@ const modalPanelTasks = document.getElementById("modalPanelTasks");
 const dealTasksListEl = document.getElementById("dealTasksList");
 const newTaskNameInput = document.getElementById("newTaskNameInput");
 const newTaskDueInput = document.getElementById("newTaskDueInput");
+const newTaskTimeInput = document.getElementById("newTaskTimeInput");
 const newTaskTypePickerEl = document.getElementById("newTaskTypePicker");
 const taskTypeFilterEl = document.getElementById("taskTypeFilter");
 const tasksFiltersEl = document.getElementById("tasksFilters");
@@ -4599,6 +4601,93 @@ function formatTaskDueDate(timestamp) {
   });
 }
 
+/** Format hour/minute as "9:00" or "13:30". */
+function formatTaskTime(hours, minutes) {
+  return `${hours}:${String(minutes).padStart(2, "0")}`;
+}
+
+/**
+ * Parse shorthand time: "9" → "9:00", "1330" → "13:30", "9:30" stays.
+ * Returns "" for empty, null for invalid.
+ */
+function parseTaskTimeInput(raw) {
+  const value = String(raw || "").trim();
+  if (!value) return "";
+
+  const colon = value.match(/^(\d{1,2}):(\d{1,2})$/);
+  if (colon) {
+    const hours = Number(colon[1]);
+    const minutes = Number(colon[2]);
+    if (hours > 23 || minutes > 59) return null;
+    return formatTaskTime(hours, minutes);
+  }
+
+  const dotted = value.match(/^(\d{1,2})[.\s](\d{1,2})$/);
+  if (dotted) {
+    const hours = Number(dotted[1]);
+    const minutes = Number(dotted[2]);
+    if (hours > 23 || minutes > 59) return null;
+    return formatTaskTime(hours, minutes);
+  }
+
+  if (!/^\d{1,4}$/.test(value)) return null;
+
+  let hours;
+  let minutes;
+  if (value.length <= 2) {
+    hours = Number(value);
+    minutes = 0;
+  } else if (value.length === 3) {
+    hours = Number(value.slice(0, 1));
+    minutes = Number(value.slice(1));
+  } else {
+    hours = Number(value.slice(0, 2));
+    minutes = Number(value.slice(2));
+  }
+  if (hours > 23 || minutes > 59) return null;
+  return formatTaskTime(hours, minutes);
+}
+
+function normalizeTaskTime(value) {
+  if (value == null || value === "") return "";
+  if (typeof value === "number" && Number.isFinite(value)) {
+    const minutes = Math.max(0, Math.min(23 * 60 + 59, Math.round(value)));
+    return formatTaskTime(Math.floor(minutes / 60), minutes % 60);
+  }
+  return parseTaskTimeInput(value) || "";
+}
+
+function taskDueTimeMinutes(task) {
+  const time = normalizeTaskTime(task?.dueTime);
+  if (!time) return null;
+  const [hours, minutes] = time.split(":").map(Number);
+  return hours * 60 + minutes;
+}
+
+/** Sort key: date first, then timed tasks before untimed, then by time. */
+function compareTasksByDue(a, b) {
+  const dueCmp = (a.dueAt || 0) - (b.dueAt || 0);
+  if (dueCmp) return dueCmp;
+  const aMin = taskDueTimeMinutes(a);
+  const bMin = taskDueTimeMinutes(b);
+  if (aMin == null && bMin == null) return 0;
+  if (aMin == null) return 1;
+  if (bMin == null) return -1;
+  return aMin - bMin;
+}
+
+function commitTaskTimeInput(input, { previous = "" } = {}) {
+  const parsed = parseTaskTimeInput(input.value);
+  if (parsed == null) {
+    input.classList.add("is-invalid");
+    input.value = previous;
+    return previous;
+  }
+  input.classList.remove("is-invalid");
+  input.value = parsed;
+  return parsed;
+}
+
 function isTaskOverdue(task, now = Date.now()) {
   if (!task || task.done || task.dueAt == null) return false;
   return task.dueAt < startOfDay(new Date(now)).getTime();
@@ -4624,6 +4713,28 @@ function createSvgEl(name, attrs = {}) {
   const el = document.createElementNS(SVG_NS, name);
   for (const [key, value] of Object.entries(attrs)) el.setAttribute(key, value);
   return el;
+}
+
+/** Two arrows pointing inward at a center dot — “focus this week”. */
+function createWeekFocusIcon() {
+  const svg = createSvgEl("svg", {
+    viewBox: "0 0 16 16",
+    fill: "none",
+    "aria-hidden": "true",
+  });
+  const stroke = {
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "1.45",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+  };
+  svg.appendChild(createSvgEl("path", { ...stroke, d: "M1.4 8h2.6" }));
+  svg.appendChild(createSvgEl("path", { ...stroke, d: "M2.4 5.5 4.9 8 2.4 10.5" }));
+  svg.appendChild(createSvgEl("circle", { cx: "8", cy: "8", r: "1.05", fill: "currentColor" }));
+  svg.appendChild(createSvgEl("path", { ...stroke, d: "M14.6 8h-2.6" }));
+  svg.appendChild(createSvgEl("path", { ...stroke, d: "M13.6 5.5 11.1 8 13.6 10.5" }));
+  return svg;
 }
 
 function createTaskTypeIcon(type) {
@@ -4788,6 +4899,7 @@ function normalizeTask(task) {
     id: task.id || crypto.randomUUID(),
     text: (task.text || "").trim(),
     dueAt: Number.isFinite(dueAt) ? dueAt : null,
+    dueTime: normalizeTaskTime(task?.dueTime),
     type: normalizeTaskType(task.type),
     done: Boolean(task.done),
     completedAt: task.completedAt ?? null,
@@ -5027,7 +5139,8 @@ function updateActivityNoteTime(note, timeEl) {
 
 function updateDealTaskMeta(task, metaEl) {
   const dueLabel = task.dueAt != null ? formatTaskDueDate(task.dueAt) : "No date";
-  let text = dueLabel + formatActorStamp(task.createdBy);
+  const time = normalizeTaskTime(task.dueTime);
+  let text = (time ? `${dueLabel} · ${time}` : dueLabel) + formatActorStamp(task.createdBy);
   if (task.done) text += " · completed";
   else if (isTaskOverdue(task)) text += " · overdue";
   if (taskWasEdited(task)) {
@@ -5261,7 +5374,7 @@ function renderDealTasks() {
 
   const visible = [...modalTasks].sort((a, b) => {
     if (a.done !== b.done) return a.done ? 1 : -1;
-    return (a.dueAt || 0) - (b.dueAt || 0);
+    return compareTasksByDue(a, b);
   });
 
   if (!visible.length) {
@@ -5326,6 +5439,20 @@ function renderDealTasks() {
     dueInput.setAttribute("form", "mhn-task-composer-unbound");
     const initialDue = dueInput.value;
 
+    const timeInput = document.createElement("input");
+    timeInput.type = "text";
+    timeInput.className = "deal-task-time";
+    timeInput.inputMode = "numeric";
+    timeInput.placeholder = "e.g. 1430 or 14:30";
+    timeInput.autocomplete = "off";
+    timeInput.value = normalizeTaskTime(task.dueTime);
+    timeInput.defaultValue = timeInput.value;
+    timeInput.readOnly = modalReadOnly;
+    timeInput.disabled = modalReadOnly;
+    timeInput.setAttribute("aria-label", "Task time");
+    timeInput.setAttribute("form", "mhn-task-composer-unbound");
+    let committedTime = timeInput.value;
+
     const typePicker = createTaskTypePicker({
       selected: task.type,
       disabled: modalReadOnly,
@@ -5340,7 +5467,7 @@ function renderDealTasks() {
       },
     });
 
-    dueRow.append(dueInput, typePicker);
+    dueRow.append(dueInput, timeInput, typePicker);
 
     const meta = document.createElement("p");
     meta.className = "deal-task-meta";
@@ -5374,10 +5501,29 @@ function renderDealTasks() {
         task.updatedAt = Date.now();
         task.updatedBy = stampCurrentUser(task.createdBy);
       }
-      card.classList.toggle("is-overdue", isTaskOverdue(task));
-      updateDealTaskMeta(task, meta);
-      // Close the native date picker immediately after a choice.
+      // Close the native date picker, then re-sort by date/time.
       dueInput.blur();
+      renderDealTasks();
+    });
+
+    const applyTaskTime = () => {
+      const next = commitTaskTimeInput(timeInput, { previous: committedTime });
+      if (next === committedTime) {
+        updateDealTaskMeta(task, meta);
+        return;
+      }
+      committedTime = next;
+      task.dueTime = next;
+      task.updatedAt = Date.now();
+      task.updatedBy = stampCurrentUser(task.createdBy);
+      renderDealTasks();
+    };
+    timeInput.addEventListener("blur", applyTaskTime);
+    timeInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        applyTaskTime();
+      }
     });
 
     fields.append(nameInput, dueRow, meta);
@@ -5393,6 +5539,21 @@ function addDealTask() {
   if (modalReadOnly) return;
   const text = newTaskNameInput.value.trim();
   const dueAt = parseDateInput(newTaskDueInput.value);
+  let dueTime = "";
+  if (newTaskTimeInput) {
+    const rawTime = newTaskTimeInput.value.trim();
+    if (rawTime) {
+      const parsedTime = parseTaskTimeInput(rawTime);
+      if (parsedTime == null) {
+        newTaskTimeInput.classList.add("is-invalid");
+        newTaskTimeInput.focus();
+        return;
+      }
+      dueTime = parsedTime;
+      newTaskTimeInput.value = parsedTime;
+      newTaskTimeInput.classList.remove("is-invalid");
+    }
+  }
   const type = normalizeTaskType(newTaskType);
   if (!text) {
     newTaskNameInput.focus();
@@ -5411,6 +5572,7 @@ function addDealTask() {
     id: crypto.randomUUID(),
     text,
     dueAt,
+    dueTime,
     type,
     done: false,
     completedAt: null,
@@ -5421,6 +5583,10 @@ function addDealTask() {
   });
   newTaskNameInput.value = "";
   newTaskDueInput.value = "";
+  if (newTaskTimeInput) {
+    newTaskTimeInput.value = "";
+    newTaskTimeInput.classList.remove("is-invalid");
+  }
   newTaskType = "";
   mountComposerTaskTypePicker();
   renderDealTasks();
@@ -5442,11 +5608,13 @@ function getAllTaskEntries({ includeCompleted = showCompletedTasks } = {}) {
   }
   entries.sort((a, b) => {
     if (a.task.done !== b.task.done) return a.task.done ? 1 : -1;
+    // Same day: earlier times first; tasks with no time sink to the bottom of that day.
+    const dueCmp = compareTasksByDue(a.task, b.task);
+    if (dueCmp) return dueCmp;
     if (taskTypeFilters.size) {
       const typeCmp = taskTypeSortIndex(a.task.type) - taskTypeSortIndex(b.task.type);
       if (typeCmp) return typeCmp;
     }
-    if (a.task.dueAt !== b.task.dueAt) return a.task.dueAt - b.task.dueAt;
     return (a.task.createdAt || 0) - (b.task.createdAt || 0);
   });
   return entries;
@@ -5738,6 +5906,29 @@ function startOfISOWeek(date) {
   return addDays(d, offset);
 }
 
+function isoWeekRange(weekStartMs) {
+  const start = startOfISOWeek(new Date(weekStartMs)).getTime();
+  return { start, end: addDays(new Date(start), 7).getTime() };
+}
+
+function forEachVisibleISOWeek(periodStart, periodEnd, fn) {
+  let cursor = startOfISOWeek(new Date(periodStart));
+  while (cursor.getTime() < periodEnd) {
+    const start = cursor.getTime();
+    const end = addDays(cursor, 7).getTime();
+    if (end > periodStart && start < periodEnd) {
+      fn({
+        start,
+        end,
+        weekNo: getISOWeekNumber(cursor),
+        continuesStart: start < periodStart,
+        continuesEnd: end > periodEnd,
+      });
+    }
+    cursor = addDays(cursor, 7);
+  }
+}
+
 function forEachVisibleWeekend(periodStart, periodEnd, fn) {
   let cursor = startOfDay(new Date(periodStart));
   const day = cursor.getDay();
@@ -5849,6 +6040,74 @@ function renderTasksPipelineScale(periodStart, periodEnd, span) {
   return scale;
 }
 
+function appendTasksPipelineWeekFocus(container, periodStart, periodEnd, span) {
+  if (!container || tasksPipelineState.periodMonths >= 12) return;
+  const selected =
+    tasksPipelineState.selectedWeekStart == null
+      ? null
+      : startOfISOWeek(new Date(tasksPipelineState.selectedWeekStart)).getTime();
+
+  forEachVisibleISOWeek(periodStart, periodEnd, (week) => {
+    const visibleStart = Math.max(week.start, periodStart);
+    const visibleEnd = Math.min(week.end, periodEnd);
+    const visibleDays = (visibleEnd - visibleStart) / MS_DAY;
+    if (visibleDays < 2.5) return;
+
+    // Day labels sit at midnight, so Wednesday 00:00 lands on the middle weekday number.
+    const wednesday = addDays(new Date(week.start), 2).getTime();
+    const center =
+      wednesday >= visibleStart && wednesday < visibleEnd
+        ? wednesday
+        : (visibleStart + visibleEnd) / 2;
+    const left = ((center - periodStart) / span) * 100;
+    const isActive = selected === week.start;
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "tasks-pipeline-week-focus";
+    if (isActive) btn.classList.add("is-active");
+    btn.style.left = `${left}%`;
+    btn.setAttribute("aria-pressed", isActive ? "true" : "false");
+    const weekLabel = `week ${week.weekNo}`;
+    btn.setAttribute(
+      "aria-label",
+      isActive ? `Show all weeks (currently ${weekLabel})` : `Show only ${weekLabel}`
+    );
+    btn.title = isActive ? "Show all weeks" : `Show only ${weekLabel}`;
+    btn.append(createWeekFocusIcon());
+    btn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      tasksPipelineState.selectedWeekStart = isActive ? null : week.start;
+      if (activeTab === "tasks") renderTasksView();
+    });
+    container.appendChild(btn);
+  });
+}
+
+function renderTasksPipelineWeekFocusRow(periodStart, periodEnd, span) {
+  if (tasksPipelineState.periodMonths >= 12) return null;
+  const row = document.createElement("div");
+  row.className = "tasks-pipeline-axis-weeks";
+  appendTasksPipelineWeekFocus(row, periodStart, periodEnd, span);
+  return row.childElementCount ? row : null;
+}
+
+function appendTasksPipelineWeekBand(container, periodStart, periodEnd, span) {
+  if (!container || tasksPipelineState.selectedWeekStart == null) return;
+  const { start, end } = isoWeekRange(tasksPipelineState.selectedWeekStart);
+  const visibleStart = Math.max(start, periodStart);
+  const visibleEnd = Math.min(end, periodEnd);
+  if (visibleEnd <= visibleStart) return;
+
+  const el = document.createElement("div");
+  el.className = "tasks-pipeline-week-band";
+  el.setAttribute("aria-hidden", "true");
+  el.style.left = `${((visibleStart - periodStart) / span) * 100}%`;
+  el.style.width = `${((visibleEnd - visibleStart) / span) * 100}%`;
+  container.appendChild(el);
+}
+
 function truncateTaskPipelineLabel(text) {
   const value = (text || "").trim();
   if (value.length <= TASKS_PIPELINE_LABEL_MAX) return value;
@@ -5869,9 +6128,13 @@ function formatTaskDayOffset(dueAt) {
   return String(days);
 }
 
+/** Short weekday of the due date, e.g. "Thu". */
+function formatTaskWeekday(dueAt) {
+  return new Date(dueAt).toLocaleDateString("en-US", { weekday: "short" });
+}
+
 function taskDayOffsetSide(dueAt) {
   const days = getTaskDayOffset(dueAt);
-  if (days === 0) return null;
   return days > 0 ? "after" : "before";
 }
 
@@ -5969,8 +6232,13 @@ function measureTaskPipelineItemInterval(item, rowWidthPx) {
 
 function packIntervalsFirstFit(intervals) {
   const sorted = [...intervals].sort((a, b) => a.start - b.start || a.end - b.end);
+  return packIntervalsInOrder(sorted);
+}
+
+/** First-fit packing that keeps the given order (used for date/time sorting). */
+function packIntervalsInOrder(intervals) {
   const rowEnds = [];
-  for (const item of sorted) {
+  for (const item of intervals) {
     let row = 0;
     while (row < rowEnds.length && rowEnds[row] > item.start) row += 1;
     if (row === rowEnds.length) rowEnds.push(0);
@@ -6058,6 +6326,10 @@ function applyTaskPipelineClusterPacking(clusters, measure) {
  * together; a gap longer than a week starts a new cluster so empty rows collapse.
  */
 function assignTaskPipelineRows(entries, span, rowWidthPx = 720) {
+  if (tasksPipelineState.selectedWeekStart != null) {
+    return assignTaskPipelineRowsByDueTime(entries, span, rowWidthPx);
+  }
+
   const clusters = clusterTaskPipelineByCompany(
     entries,
     (entry) => entry.task.dueAt,
@@ -6082,29 +6354,67 @@ function assignTaskPipelineRows(entries, span, rowWidthPx = 720) {
   );
 }
 
+/** Stack a week’s tasks by due date, then time (untimed sink to the bottom of that day). */
+function assignTaskPipelineRowsByDueTime(entries, span, rowWidthPx = 720) {
+  const members = entries.map((entry) => {
+    const interval = measureTaskPipelineEntryInterval(entry, span, rowWidthPx);
+    return { item: entry, start: interval.start, end: interval.end };
+  });
+  const rowCount = packIntervalsInOrder(members);
+  for (const member of members) {
+    member.item._pipelineRow = member.relRow;
+    member.item._pipelineStart = member.item.task.dueAt;
+    member.item._pipelineEnd = member.end;
+  }
+  return rowCount;
+}
+
 /** After items are in the DOM, re-pack from measured widths so nothing overlaps. */
 function relayoutTaskPipelineBars() {
   const items = [...tasksPipelineRowsEl.querySelectorAll(".tasks-pipeline-item")];
   if (!items.length) return;
 
   const rowWidthPx = Math.max(tasksPipelineRowsEl.clientWidth || 720, 1);
-  const clusters = clusterTaskPipelineByCompany(
-    items,
-    (item) => Number(item.dataset.dueAt) || 0,
-    (item) => item.dataset.company || ""
-  );
-  const rowCount = applyTaskPipelineClusterPacking(clusters, (item) =>
-    measureTaskPipelineItemInterval(item, rowWidthPx)
-  );
+  let laidOut;
 
-  for (const cluster of clusters) {
-    for (const member of cluster.members) {
-      member.item.style.top = `${member.row * TASKS_PIPELINE_ROW_HEIGHT + TASKS_PIPELINE_BAR_TOP}px`;
-      member.item.dataset.pipelineRow = String(member.row);
+  if (tasksPipelineState.selectedWeekStart != null) {
+    const ordered = [...items].sort((a, b) =>
+      compareTasksByDue(
+        { dueAt: Number(a.dataset.dueAt) || 0, dueTime: a.dataset.dueTime || "" },
+        { dueAt: Number(b.dataset.dueAt) || 0, dueTime: b.dataset.dueTime || "" }
+      )
+    );
+    const members = ordered.map((item) => {
+      const { start, end } = measureTaskPipelineItemInterval(item, rowWidthPx);
+      return { item, start, end };
+    });
+    packIntervalsInOrder(members);
+    laidOut = members.map((member) => ({ item: member.item, row: member.relRow }));
+  } else {
+    const clusters = clusterTaskPipelineByCompany(
+      items,
+      (item) => Number(item.dataset.dueAt) || 0,
+      (item) => item.dataset.company || ""
+    );
+    applyTaskPipelineClusterPacking(clusters, (item) =>
+      measureTaskPipelineItemInterval(item, rowWidthPx)
+    );
+    laidOut = [];
+    for (const cluster of clusters) {
+      for (const member of cluster.members) {
+        laidOut.push({ item: member.item, row: member.row });
+      }
     }
   }
 
-  const finalRows = Math.max(rowCount, 2);
+  let maxRow = -1;
+  for (const member of laidOut) {
+    member.item.style.top = `${member.row * TASKS_PIPELINE_ROW_HEIGHT + TASKS_PIPELINE_BAR_TOP}px`;
+    member.item.dataset.pipelineRow = String(member.row);
+    if (member.row > maxRow) maxRow = member.row;
+  }
+
+  const finalRows = Math.max(maxRow + 1, 2);
   tasksPipelineRowsEl.style.height = `${finalRows * TASKS_PIPELINE_ROW_HEIGHT}px`;
 
   tasksPipelineRowsEl.querySelectorAll(".tasks-pipeline-row-divider").forEach((el) => el.remove());
@@ -6184,7 +6494,10 @@ function showTasksPipelineTooltip(bar, deal, task) {
   dueRow.className = "tasks-pipeline-tooltip-row";
   dueRow.innerHTML = `<span class="tasks-pipeline-tooltip-label">Due</span>`;
   const dueVal = document.createElement("span");
-  dueVal.textContent = formatTaskDueDate(task.dueAt);
+  const dueTime = normalizeTaskTime(task.dueTime);
+  dueVal.textContent = dueTime
+    ? `${formatTaskDueDate(task.dueAt)} · ${dueTime}`
+    : formatTaskDueDate(task.dueAt);
   dueRow.appendChild(dueVal);
 
   tip.append(title, dealRow, toolRow, ownerRow, dueRow);
@@ -6237,10 +6550,23 @@ function renderTasksPipeline(entries) {
   const contentWidth = Math.max(viewportPx, (span / getTasksPipelineVisibleSpan()) * viewportPx);
   if (tasksPipelineScrollEl) tasksPipelineScrollEl.style.width = `${contentWidth}px`;
 
-  const visibleEntries = entries.filter((entry) => {
-    const due = entry.task.dueAt;
-    return Number.isFinite(due) && due >= periodStart && due < periodEnd;
-  });
+  const weekRange =
+    tasksPipelineState.selectedWeekStart != null
+      ? isoWeekRange(tasksPipelineState.selectedWeekStart)
+      : null;
+  const visibleEntries = entries
+    .filter((entry) => {
+      const due = entry.task.dueAt;
+      if (!Number.isFinite(due) || due < periodStart || due >= periodEnd) return false;
+      if (weekRange && (due < weekRange.start || due >= weekRange.end)) return false;
+      return true;
+    })
+    .sort((a, b) => {
+      if (a.task.done !== b.task.done) return a.task.done ? 1 : -1;
+      const dueCmp = compareTasksByDue(a.task, b.task);
+      if (dueCmp) return dueCmp;
+      return (a.task.createdAt || 0) - (b.task.createdAt || 0);
+    });
 
   const months = getOverlappingMonthStarts(periodStart, periodEnd);
 
@@ -6307,9 +6633,11 @@ function renderTasksPipeline(entries) {
     monthsRow.appendChild(todayTick);
   }
 
+  const weekFocusRow = renderTasksPipelineWeekFocusRow(periodStart, periodEnd, span);
   const scale = renderTasksPipelineScale(periodStart, periodEnd, span);
-  if (scale) tasksPipelineAxisEl.append(monthsRow, scale);
-  else tasksPipelineAxisEl.append(monthsRow);
+  tasksPipelineAxisEl.append(monthsRow);
+  if (weekFocusRow) tasksPipelineAxisEl.append(weekFocusRow);
+  if (scale) tasksPipelineAxisEl.append(scale);
 
   tasksPipelineRowsEl.innerHTML = "";
   appendTasksPipelineWeekends(
@@ -6319,6 +6647,7 @@ function renderTasksPipeline(entries) {
     span,
     "is-grid"
   );
+  appendTasksPipelineWeekBand(tasksPipelineRowsEl, periodStart, periodEnd, span);
   const rowCount = Math.max(
     assignTaskPipelineRows(visibleEntries, span, contentWidth),
     1
@@ -6354,7 +6683,9 @@ function renderTasksPipeline(entries) {
     const empty = document.createElement("div");
     empty.className = "tasks-pipeline-empty";
     const filtersActive = hasActiveFilters() || searchQuery || taskTypeFilters.size;
-    empty.textContent = taskTypeFilters.size
+    empty.textContent = weekRange
+      ? "No tasks in this week."
+      : taskTypeFilters.size
       ? "No matching tasks of the selected types on the timeline"
       : filtersActive
       ? "No matching tasks on the timeline"
@@ -6376,18 +6707,29 @@ function renderTasksPipeline(entries) {
     item.className = "tasks-pipeline-item";
     item.dataset.company = taskPipelineCompanyKey(entry);
     item.dataset.dueAt = String(task.dueAt);
+    item.dataset.dueTime = task.dueTime || "";
     item.style.left = `${left}%`;
     item.style.top = `${entry._pipelineRow * TASKS_PIPELINE_ROW_HEIGHT + TASKS_PIPELINE_BAR_TOP}px`;
 
     const dayOffsetDays = getTaskDayOffset(task.dueAt);
     const dayOffsetLabel = formatTaskDayOffset(task.dueAt);
+    const dayOffset = document.createElement("span");
+    dayOffset.className = "tasks-pipeline-day-offset";
+    if (dayOffsetDays > 0) dayOffset.classList.add("is-overdue");
+
+    const weekday = document.createElement("span");
+    weekday.className = "tasks-pipeline-weekday";
+    weekday.textContent = formatTaskWeekday(task.dueAt);
+
     if (dayOffsetLabel) {
-      const dayOffset = document.createElement("span");
-      dayOffset.className = "tasks-pipeline-day-offset";
-      if (dayOffsetDays > 0) dayOffset.classList.add("is-overdue");
-      dayOffset.textContent = dayOffsetLabel;
-      item.append(dayOffset);
+      const count = document.createElement("span");
+      count.className = "tasks-pipeline-day-count";
+      count.textContent = dayOffsetLabel;
+      dayOffset.append(count, weekday);
+    } else {
+      dayOffset.append(weekday);
     }
+    item.append(dayOffset);
 
     const bar = document.createElement("button");
     bar.type = "button";
@@ -6467,7 +6809,10 @@ function renderTaskCard(deal, task) {
 
   const meta = document.createElement("p");
   meta.className = "task-card-meta";
-  const bits = [formatTaskDueDate(task.dueAt)];
+  const dueTime = normalizeTaskTime(task.dueTime);
+  const bits = [
+    dueTime ? `${formatTaskDueDate(task.dueAt)} · ${dueTime}` : formatTaskDueDate(task.dueAt),
+  ];
   const typeLabel = taskTypeLabel(task.type);
   if (typeLabel) bits.push(typeLabel);
   if (task.createdBy) bits.push(`by ${task.createdBy}`);
@@ -6582,6 +6927,10 @@ function openModal({
   newNoteInput.value = "";
   newTaskNameInput.value = "";
   newTaskDueInput.value = "";
+  if (newTaskTimeInput) {
+    newTaskTimeInput.value = "";
+    newTaskTimeInput.classList.remove("is-invalid");
+  }
   newTaskType = "";
   mountComposerTaskTypePicker();
   setModalPanel(initialPanel);
@@ -6634,6 +6983,10 @@ function applyModalReadOnly(isReadOnly) {
   dealTasksComposer.hidden = isReadOnly;
   newTaskNameInput.readOnly = isReadOnly;
   newTaskDueInput.disabled = isReadOnly;
+  if (newTaskTimeInput) {
+    newTaskTimeInput.readOnly = isReadOnly;
+    newTaskTimeInput.disabled = isReadOnly;
+  }
   if (dealContractFileBtn) {
     // Keep preview available in read-only; only block choosing a new file.
     dealContractFileBtn.disabled = false;
@@ -6659,6 +7012,10 @@ function closeModal() {
   newNoteInput.value = "";
   newTaskNameInput.value = "";
   newTaskDueInput.value = "";
+  if (newTaskTimeInput) {
+    newTaskTimeInput.value = "";
+    newTaskTimeInput.classList.remove("is-invalid");
+  }
   newTaskType = "";
   mountComposerTaskTypePicker();
   setModalPanel("details");
@@ -7191,6 +7548,18 @@ if (newTaskDueInput) {
   newTaskDueInput.addEventListener("change", () => {
     // Dismiss the native date picker as soon as a date is chosen.
     newTaskDueInput.blur();
+  });
+}
+if (newTaskTimeInput) {
+  newTaskTimeInput.addEventListener("blur", () => {
+    commitTaskTimeInput(newTaskTimeInput, { previous: "" });
+  });
+  newTaskTimeInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      commitTaskTimeInput(newTaskTimeInput, { previous: "" });
+      addDealTask();
+    }
   });
 }
 if (tasksShowCompletedBtn) {
