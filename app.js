@@ -2973,7 +2973,6 @@ function renderColumn(stage, visibleDeals) {
   const activeTotal = activeDeals.reduce((sum, d) => sum + (Number(d.value) || 0), 0);
   const touchedTotal = touchedDeals.reduce((sum, d) => sum + (Number(d.value) || 0), 0);
   const pausedTotal = pausedDeals.reduce((sum, d) => sum + (Number(d.value) || 0), 0);
-  const includingPausedTotal = activeTotal + touchedTotal + pausedTotal;
   const total = pausedView ? pausedTotal : touchedView ? touchedTotal : activeTotal;
   const supportTotalStages = new Set(["interested", "committed", "paid", "failed"]);
   const supportTotal = supportTotalStages.has(stage.id)
@@ -3106,24 +3105,24 @@ function renderColumn(stage, visibleDeals) {
   const totalRight = document.createElement("div");
   totalRight.className = "total-right";
 
-  if (stage.id === "prospects" && pausedDeals.length > 0 && !pausedView) {
-    const including = document.createElement("span");
-    including.className = "total-including-paused";
-    including.textContent = `(including paused ${fmtEuro.format(includingPausedTotal)})`;
-    totalRight.appendChild(including);
+  const totalValue = document.createElement("span");
+  totalValue.className = "total-value";
+  totalValue.textContent = fmtEuro.format(total);
+  totalRight.appendChild(totalValue);
+
+  if (stage.id === "prospects" && pausedTotal > 0 && !pausedView) {
+    const pausedNote = document.createElement("span");
+    pausedNote.className = "total-paused";
+    pausedNote.textContent = `(paused ${fmtEuro.format(pausedTotal)})`;
+    totalRight.appendChild(pausedNote);
   }
 
   if (supportTotal > 0) {
     const support = document.createElement("span");
     support.className = "total-support";
-    support.textContent = `(annual support ${fmtEuro.format(supportTotal)})`;
+    support.textContent = `(Support ARR ${fmtEuro.format(supportTotal)})`;
     totalRight.appendChild(support);
   }
-
-  const totalValue = document.createElement("span");
-  totalValue.className = "total-value";
-  totalValue.textContent = fmtEuro.format(total);
-  totalRight.appendChild(totalValue);
 
   footer.append(totalLabel, totalRight);
 
