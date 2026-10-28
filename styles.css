@@ -1159,7 +1159,8 @@ main {
   min-width: 0;
 }
 
-.column-footer .total-including-paused {
+.column-footer .total-including-paused,
+.column-footer .total-support {
   font-family: var(--font-sans);
   font-size: 10px;
   font-weight: 400;
@@ -4321,15 +4322,9 @@ body.is-card-dragging .card {
   min-width: 0;
 }
 .field.span-2,
+.value-fields.span-2,
 .implementation-fields.span-2 {
   grid-column: span 2;
-}
-
-.field-stack {
-  display: flex;
-  flex-direction: column;
-  gap: 14px;
-  min-width: 0;
 }
 
 .field-label {
@@ -4338,6 +4333,20 @@ body.is-card-dragging .card {
   letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--ink-soft);
+}
+
+.value-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+.value-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 14px 16px;
 }
 
 .field-hint {

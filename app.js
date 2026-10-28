@@ -2975,6 +2975,10 @@ function renderColumn(stage, visibleDeals) {
   const pausedTotal = pausedDeals.reduce((sum, d) => sum + (Number(d.value) || 0), 0);
   const includingPausedTotal = activeTotal + touchedTotal + pausedTotal;
   const total = pausedView ? pausedTotal : touchedView ? touchedTotal : activeTotal;
+  const supportTotalStages = new Set(["interested", "committed", "paid", "failed"]);
+  const supportTotal = supportTotalStages.has(stage.id)
+    ? shownDeals.reduce((sum, deal) => sum + annualSupportValue(deal), 0)
+    : 0;
   const filtersActive = hasActiveFilters();
 
   const col = document.createElement("section");
@@ -3107,6 +3111,13 @@ function renderColumn(stage, visibleDeals) {
     including.className = "total-including-paused";
     including.textContent = `(including paused ${fmtEuro.format(includingPausedTotal)})`;
     totalRight.appendChild(including);
+  }
+
+  if (supportTotal > 0) {
+    const support = document.createElement("span");
+    support.className = "total-support";
+    support.textContent = `(annual support ${fmtEuro.format(supportTotal)})`;
+    totalRight.appendChild(support);
   }
 
   const totalValue = document.createElement("span");
