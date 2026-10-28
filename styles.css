@@ -1501,6 +1501,11 @@ body.is-card-dragging .card {
   color: var(--chip-value);
 }
 
+.card-support {
+  font-weight: 500;
+  color: var(--ink-soft);
+}
+
 .card-owner {
   font-size: 11.5px;
   color: var(--chip-owner-ink);
@@ -4318,6 +4323,13 @@ body.is-card-dragging .card {
 .field.span-2,
 .implementation-fields.span-2 {
   grid-column: span 2;
+}
+
+.field-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  min-width: 0;
 }
 
 .field-label {

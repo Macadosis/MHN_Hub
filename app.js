@@ -212,6 +212,15 @@ const fmtEuro = new Intl.NumberFormat("de-DE", {
   maximumFractionDigits: 0,
 });
 
+function parseSupportMonthly(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? n : 0;
+}
+
+function annualSupportValue(deal) {
+  return parseSupportMonthly(deal?.supportMonthly) * 12;
+}
+
 /* ------------------------------ Auth / session ----------------- */
 
 const loginScreen = document.getElementById("loginScreen");
@@ -3246,6 +3255,13 @@ function renderCard(deal) {
   const value = document.createElement("span");
   value.className = "card-value";
   value.textContent = fmtEuro.format(Number(deal.value) || 0);
+  const annualSupport = annualSupportValue(deal);
+  if (annualSupport) {
+    const support = document.createElement("span");
+    support.className = "card-support";
+    support.textContent = ` (${fmtEuro.format(annualSupport)})`;
+    value.append(support);
+  }
   row.appendChild(value);
 
   if (deal.owner) {
@@ -6877,6 +6893,9 @@ function openModal({
   // Reset first so later-rendered task inputs are not wiped back to empty defaults.
   form.reset();
   form.elements.value.value = deal ? deal.value : DEFAULT_VALUE;
+  if (form.elements.supportMonthly) {
+    form.elements.supportMonthly.value = deal?.supportMonthly ? deal.supportMonthly : "";
+  }
 
   if (deal) {
     form.elements.company.value = deal.company || "";
@@ -7330,6 +7349,7 @@ async function saveDealFromForm() {
     industry: toTitleCase(form.elements.industry.value),
     tool: toTitleCase(form.elements.tool.value),
     value: Number(form.elements.value.value) || 0,
+    supportMonthly: parseSupportMonthly(form.elements.supportMonthly?.value),
     owner: toTitleCase(form.elements.owner.value),
     notes: modalNotes
       .map((note) => ({

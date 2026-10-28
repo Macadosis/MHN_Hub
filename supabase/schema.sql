@@ -55,6 +55,9 @@ alter table public.deals
 alter table public.deals
   add column if not exists contract_file_name text default '';
 
+alter table public.deals
+  add column if not exists support_monthly numeric not null default 0;
+
 -- Private bucket for contract files (PDF / Word)
 insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
 values (
