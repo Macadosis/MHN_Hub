@@ -1444,18 +1444,65 @@ function canPinDeal(deal) {
   return countPinnedInStage(deal.stage, { excludeId: deal.id }) < MAX_PINNED_PER_STAGE;
 }
 
+/**
+ * Pin floats the deal to the top of its column. Returns false when the column
+ * is already at the pin cap so the button can explain why nothing moved.
+ */
 function toggleDealPin(deal) {
   if (!deal || deal.stage === "dismissed" || deal.dismissedAt) return;
   if (isDealPinned(deal)) {
     delete deal.pinnedAt;
+    if (Number.isFinite(deal.boardOrderBeforePin)) {
+      deal.boardOrder = deal.boardOrderBeforePin;
+      delete deal.boardOrderBeforePin;
+    }
   } else if (!canPinDeal(deal)) {
-    return;
+    return false;
   } else {
+    const others = getStageDeals(deal.stage, { excludeId: deal.id });
+    const minOrder = others.reduce((min, item) => Math.min(min, item.boardOrder ?? 0), 0);
+    deal.boardOrderBeforePin = deal.boardOrder;
     deal.pinnedAt = Date.now();
+    // Lowest boardOrder in the pin group, so this card sorts to the top.
+    deal.boardOrder = others.length ? minOrder - 1 : 0;
   }
   closeFilterMenus();
   saveDeals(deal.id);
   render();
+  return true;
+}
+
+/** Pointerup can rebuild the board before the trailing click, which would open the card underneath. */
+let suppressCardClick = false;
+
+/**
+ * Card drag listens for pointerdown on the whole card, and a press that turns
+ * into a scroll cancels the later click. Activate overlay buttons on pointerup
+ * so the pin and pause controls still fire.
+ */
+function bindCardOverlayButton(btn, action) {
+  btn.addEventListener("pointerdown", (event) => {
+    if (event.button != null && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+  });
+  btn.addEventListener("pointerup", (event) => {
+    if (event.button != null && event.button !== 0) return;
+    event.preventDefault();
+    event.stopPropagation();
+    if (event.target !== btn && !btn.contains(event.target)) return;
+    suppressCardClick = true;
+    window.setTimeout(() => {
+      suppressCardClick = false;
+    }, 0);
+    action();
+  });
+  btn.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    // Pointer presses are handled on pointerup. detail 0 is keyboard activation.
+    if (event.detail === 0) action();
+  });
 }
 
 function nextCardSiblingId(el) {
@@ -3188,13 +3235,12 @@ function renderCard(deal) {
       : `Maximum ${MAX_PINNED_PER_STAGE} pinned in this column`;
   pinBtn.appendChild(pinTip);
 
-  pinBtn.addEventListener("pointerdown", (e) => {
-    e.stopPropagation();
-  });
-  pinBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    toggleDealPin(deal);
+  bindCardOverlayButton(pinBtn, () => {
+    const pinned = toggleDealPin(deal);
+    if (pinned === false) {
+      pinBtn.classList.add("is-showing-tip");
+      window.setTimeout(() => pinBtn.classList.remove("is-showing-tip"), 1400);
+    }
   });
 
   const pauseBtn = document.createElement("button");
@@ -3210,14 +3256,7 @@ function renderCard(deal) {
   tip.textContent = isDealPaused(deal) ? "Unpause deal" : "Pause deal";
   pauseBtn.appendChild(tip);
 
-  pauseBtn.addEventListener("pointerdown", (e) => {
-    e.stopPropagation();
-  });
-  pauseBtn.addEventListener("click", (e) => {
-    e.preventDefault();
-    e.stopPropagation();
-    openPauseConfirm(deal);
-  });
+  bindCardOverlayButton(pauseBtn, () => openPauseConfirm(deal));
 
   const company = document.createElement("h3");
   company.className = "card-company";
@@ -3288,7 +3327,7 @@ function renderCard(deal) {
   card.append(row);
 
   card.addEventListener("click", (e) => {
-    if (card.dataset.suppressClick === "1") {
+    if (suppressCardClick || card.dataset.suppressClick === "1") {
       e.preventDefault();
       e.stopPropagation();
       delete card.dataset.suppressClick;

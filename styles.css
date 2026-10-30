@@ -1223,6 +1223,7 @@ main {
   align-items: center;
   justify-content: center;
   transition: color 0.15s ease, background 0.15s ease;
+  touch-action: none;
 }
 
 .card-pin-btn:hover {
@@ -1284,7 +1285,8 @@ main {
 }
 
 .card-pin-btn:hover .card-pin-tip,
-.card-pin-btn:focus-visible .card-pin-tip {
+.card-pin-btn:focus-visible .card-pin-tip,
+.card-pin-btn.is-showing-tip .card-pin-tip {
   opacity: 1;
   transform: translateY(0);
 }
@@ -1307,6 +1309,7 @@ main {
   align-items: center;
   justify-content: center;
   transition: color 0.15s ease, background 0.15s ease;
+  touch-action: none;
 }
 
 .card-pause-btn:hover {

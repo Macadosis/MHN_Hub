@@ -172,6 +172,53 @@ function isoToMs(iso) {
   return Number.isFinite(t) ? t : null;
 }
 
+/** Columns the live database rejected. Their values stay on the device. */
+const schemaMissingColumns = new Set();
+let schemaProbed = false;
+const OMITTED_DEAL_FIELDS = {
+  pinned_at: "pinnedAt",
+  paused_at: "pausedAt",
+  board_order: "boardOrder",
+};
+
+function rememberOmittedColumn(column) {
+  schemaMissingColumns.add(column);
+}
+
+function applyMissingColumnFields(source, saved) {
+  if (!source || !saved) return saved;
+  for (const column of schemaMissingColumns) {
+    const field = OMITTED_DEAL_FIELDS[column];
+    if (!field) continue;
+    if (source[field] == null || source[field] === "") delete saved[field];
+    else saved[field] = source[field];
+  }
+  return saved;
+}
+
+/** Keep device-only fields when the remote row cannot store them. */
+function overlayMissingColumns(remoteDeals) {
+  if (!schemaMissingColumns.size) return remoteDeals;
+  const localById = new Map(
+    loadLocalDeals()
+      .filter((deal) => deal?.id)
+      .map((deal) => [deal.id, deal])
+  );
+  return (remoteDeals || []).map((deal) => {
+    const local = localById.get(deal.id);
+    return local ? applyMissingColumnFields(local, deal) : deal;
+  });
+}
+
+async function probeDealSchema() {
+  if (schemaProbed || !db) return;
+  schemaProbed = true;
+  const { error } = await db.from("deals").select("pinned_at").limit(1);
+  if (error && /pinned_at/i.test(error.message || "")) {
+    rememberOmittedColumn("pinned_at");
+  }
+}
+
 function dealVersion(deal) {
   const n = Number(deal?.version);
   return Number.isFinite(n) && n > 0 ? n : 0;
@@ -285,10 +332,11 @@ function assertCloudWriteAllowed() {
 }
 
 async function fetchRemoteDeals() {
+  await probeDealSchema();
   const { data, error } = await db.from("deals").select("*").order("created_at", { ascending: true });
   if (error) throw error;
   cloudHydrated = true;
-  return (data || []).map(rowToDeal);
+  return overlayMissingColumns((data || []).map(rowToDeal));
 }
 
 /**
@@ -309,6 +357,7 @@ async function withColumnCompat(run) {
       continue;
     }
     if (/board_order/i.test(msg) && !omit.has("board_order")) {
+      rememberOmittedColumn("board_order");
       omit.add("board_order");
       continue;
     }
@@ -317,10 +366,12 @@ async function withColumnCompat(run) {
       continue;
     }
     if (/paused_at/i.test(msg) && !omit.has("paused_at")) {
+      rememberOmittedColumn("paused_at");
       omit.add("paused_at");
       continue;
     }
     if (/pinned_at/i.test(msg) && !omit.has("pinned_at")) {
+      rememberOmittedColumn("pinned_at");
       omit.add("pinned_at");
       continue;
     }
@@ -355,7 +406,12 @@ async function legacyUpsertDeal(deal) {
     return db.from("deals").upsert(row, { onConflict: "id" }).select("*").maybeSingle();
   });
   if (error) throw error;
-  return { deal: data ? rowToDeal(data) : { ...deal, version: dealVersion(deal) || 1 }, conflict: false };
+  return {
+    deal: data
+      ? applyMissingColumnFields(deal, rowToDeal(data))
+      : { ...deal, version: dealVersion(deal) || 1 },
+    conflict: false,
+  };
 }
 
 async function fetchRemoteDealById(id) {
@@ -398,7 +454,7 @@ async function writeDealToRemote(deal) {
 
     const rows = Array.isArray(data) ? data : data ? [data] : [];
     if (rows.length) {
-      return { deal: rowToDeal(rows[0]), conflict: false };
+      return { deal: applyMissingColumnFields(deal, rowToDeal(rows[0])), conflict: false };
     }
 
     const remote = await fetchRemoteDealById(deal.id);
@@ -424,7 +480,10 @@ async function writeDealToRemote(deal) {
     throw error;
   }
 
-  return { deal: data ? rowToDeal(data) : { ...deal, version: 1 }, conflict: false };
+  return {
+    deal: data ? applyMissingColumnFields(deal, rowToDeal(data)) : { ...deal, version: 1 },
+    conflict: false,
+  };
 }
 
 /**
