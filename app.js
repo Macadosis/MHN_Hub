@@ -65,11 +65,9 @@ const PIPELINE_SCROLL_MAX_PAST_MONTHS = 24;
 const PIPELINE_SCROLL_MAX_FUTURE_MONTHS = 36;
 /** Skip month names/revenue when only a leftover sliver is on-screen. */
 const PIPELINE_MIN_MONTH_LABEL_DAYS = 10;
-/** Same-company tasks farther apart than this start a new packed cluster. */
-const TASKS_PIPELINE_COMPANY_CLUSTER_GAP_DAYS = 7;
 const TASKS_PIPELINE_COMPANY_TONES = ["sage", "lavender", "sky", "sand", "peach", "rose"];
-/** Space reserved beside a bubble for the day-offset (weekday sits under it). */
-const TASKS_PIPELINE_OFFSET_RESERVE_PX = 28;
+/** Width of the date section on the left (or right, when overdue) of a task bubble. */
+const TASKS_PIPELINE_OFFSET_RESERVE_PX = 30;
 const TASK_TYPES = [
   { id: "email", label: "Email" },
   { id: "call", label: "Call" },
@@ -6019,8 +6017,9 @@ function forEachVisibleWeekend(periodStart, periodEnd, fn) {
 
 function appendTasksPipelineWeekends(container, periodStart, periodEnd, span, extraClass) {
   if (!container || tasksPipelineState.periodMonths >= 12) return;
-  // Day numbers sit on the day-start tick. Wrap Sat+Sun labels, not Sat→Mon.
-  const tickPad = 0.42 * MS_DAY;
+  // Day numbers are centered on midnight. Run the weekend shading to the
+  // midpoint between Friday and Saturday, and between Sunday and Monday.
+  const tickPad = 0.5 * MS_DAY;
   forEachVisibleWeekend(periodStart, periodEnd, (weekend) => {
     const bandStart = weekend.sat - tickPad;
     const bandEnd = weekend.sun + tickPad;
@@ -6284,20 +6283,38 @@ function measureTaskPipelineItemInterval(item, rowWidthPx) {
   const leftPct = parseFloat(item.style.left) || 0;
   const leftPx = (leftPct / 100) * rowWidthPx;
   const widthPx = Math.max(item.offsetWidth, 1);
-  let start = leftPx;
-  let end = leftPx + widthPx + 8;
-  const offset = item.querySelector(".tasks-pipeline-day-offset");
-  if (offset) {
-    const pad = Math.max(offset.offsetWidth, TASKS_PIPELINE_OFFSET_RESERVE_PX) + 8;
-    if (offset.classList.contains("is-overdue")) end += pad;
-    else start -= pad;
-  }
-  return { start, end };
+  const bar = item.querySelector(".tasks-pipeline-bar");
+  const meta = item.querySelector(".tasks-pipeline-bar-meta");
+  const hang =
+    bar && bar.classList.contains("has-meta-start") && meta ? meta.offsetWidth : 0;
+  return {
+    start: leftPx - hang,
+    end: leftPx - hang + widthPx + 8,
+  };
 }
 
-function packIntervalsFirstFit(intervals) {
-  const sorted = [...intervals].sort((a, b) => a.start - b.start || a.end - b.end);
-  return packIntervalsInOrder(sorted);
+/** Due date and booked time for a pipeline entry or a rendered timeline item. */
+function pipelineItemDueFields(item) {
+  if (item && item.task) {
+    return { dueAt: Number(item.task.dueAt) || 0, dueTime: item.task.dueTime || "" };
+  }
+  return {
+    dueAt: Number(item?.dataset?.dueAt) || 0,
+    dueTime: item?.dataset?.dueTime || "",
+  };
+}
+
+function pipelineItemIsDone(item) {
+  if (item && item.task) return Boolean(item.task.done);
+  return Boolean(item.querySelector?.(".tasks-pipeline-bar.is-done"));
+}
+
+/** Open tasks first, then due date, then booked time so the earliest time sits on top. */
+function comparePipelineStackOrder(a, b) {
+  const aDone = pipelineItemIsDone(a);
+  const bDone = pipelineItemIsDone(b);
+  if (aDone !== bDone) return aDone ? 1 : -1;
+  return compareTasksByDue(pipelineItemDueFields(a), pipelineItemDueFields(b));
 }
 
 /** First-fit packing that keeps the given order (used for date/time sorting). */
@@ -6313,118 +6330,13 @@ function packIntervalsInOrder(intervals) {
   return rowEnds.length;
 }
 
-function lowestClusterBaseRow(members, placed) {
-  let base = 0;
-  while (
-    members.some((member) => {
-      const row = base + member.relRow;
-      return placed.some(
-        (entry) => entry.row === row && entry.start < member.end && member.start < entry.end
-      );
-    })
-  ) {
-    base += 1;
-  }
-  return base;
-}
-
-function clusterTaskPipelineByCompany(items, getDueAt, getCompany) {
-  const gapMs = TASKS_PIPELINE_COMPANY_CLUSTER_GAP_DAYS * MS_DAY;
-  const byCompany = new Map();
-  for (const item of items) {
-    const company = getCompany(item);
-    if (!byCompany.has(company)) byCompany.set(company, []);
-    byCompany.get(company).push(item);
-  }
-
-  const clusters = [];
-  for (const [company, group] of byCompany) {
-    const sorted = [...group].sort((a, b) => getDueAt(a) - getDueAt(b));
-    let current = [];
-    for (const item of sorted) {
-      if (current.length) {
-        const prevDue = getDueAt(current[current.length - 1]);
-        if (getDueAt(item) - prevDue > gapMs) {
-          clusters.push({ company, items: current });
-          current = [];
-        }
-      }
-      current.push(item);
-    }
-    if (current.length) clusters.push({ company, items: current });
-  }
-
-  clusters.sort((a, b) => {
-    const aStart = Math.min(...a.items.map(getDueAt));
-    const bStart = Math.min(...b.items.map(getDueAt));
-    if (aStart !== bStart) return aStart - bStart;
-    return a.company.localeCompare(b.company);
-  });
-  return clusters;
-}
-
-function applyTaskPipelineClusterPacking(clusters, measure) {
-  const placed = [];
-  let maxRow = -1;
-
-  for (const cluster of clusters) {
-    const members = cluster.items.map((item) => {
-      const { start, end } = measure(item);
-      return { item, start, end };
-    });
-    packIntervalsFirstFit(members);
-    const base = lowestClusterBaseRow(members, placed);
-    for (const member of members) {
-      const row = base + member.relRow;
-      placed.push({ row, start: member.start, end: member.end });
-      if (row > maxRow) maxRow = row;
-      member.row = row;
-    }
-    cluster.members = members;
-  }
-
-  return maxRow + 1;
-}
-
-/**
- * Pack tasks into rows by company cluster. Nearby same-company tasks stay stacked
- * together; a gap longer than a week starts a new cluster so empty rows collapse.
- */
+/** Stack tasks by due date, then booked time (earliest on top; untimed sink below that day). */
 function assignTaskPipelineRows(entries, span, rowWidthPx = 720) {
-  if (tasksPipelineState.selectedWeekStart != null) {
-    return assignTaskPipelineRowsByDueTime(entries, span, rowWidthPx);
-  }
-
-  const clusters = clusterTaskPipelineByCompany(
-    entries,
-    (entry) => entry.task.dueAt,
-    taskPipelineCompanyKey
-  );
-  applyTaskPipelineClusterPacking(clusters, (entry) =>
-    measureTaskPipelineEntryInterval(entry, span, rowWidthPx)
-  );
-
-  for (const cluster of clusters) {
-    for (const member of cluster.members) {
-      member.item._pipelineRow = member.row;
-      member.item._pipelineStart = member.item.task.dueAt;
-      member.item._pipelineEnd = member.end;
-    }
-  }
-
-  return clusters.reduce(
-    (max, cluster) =>
-      Math.max(max, ...cluster.members.map((member) => member.row + 1)),
-    0
-  );
-}
-
-/** Stack a week’s tasks by due date, then time (untimed sink to the bottom of that day). */
-function assignTaskPipelineRowsByDueTime(entries, span, rowWidthPx = 720) {
   const members = entries.map((entry) => {
     const interval = measureTaskPipelineEntryInterval(entry, span, rowWidthPx);
     return { item: entry, start: interval.start, end: interval.end };
   });
+  members.sort((a, b) => comparePipelineStackOrder(a.item, b.item));
   const rowCount = packIntervalsInOrder(members);
   for (const member of members) {
     member.item._pipelineRow = member.relRow;
@@ -6440,37 +6352,13 @@ function relayoutTaskPipelineBars() {
   if (!items.length) return;
 
   const rowWidthPx = Math.max(tasksPipelineRowsEl.clientWidth || 720, 1);
-  let laidOut;
-
-  if (tasksPipelineState.selectedWeekStart != null) {
-    const ordered = [...items].sort((a, b) =>
-      compareTasksByDue(
-        { dueAt: Number(a.dataset.dueAt) || 0, dueTime: a.dataset.dueTime || "" },
-        { dueAt: Number(b.dataset.dueAt) || 0, dueTime: b.dataset.dueTime || "" }
-      )
-    );
-    const members = ordered.map((item) => {
-      const { start, end } = measureTaskPipelineItemInterval(item, rowWidthPx);
-      return { item, start, end };
-    });
-    packIntervalsInOrder(members);
-    laidOut = members.map((member) => ({ item: member.item, row: member.relRow }));
-  } else {
-    const clusters = clusterTaskPipelineByCompany(
-      items,
-      (item) => Number(item.dataset.dueAt) || 0,
-      (item) => item.dataset.company || ""
-    );
-    applyTaskPipelineClusterPacking(clusters, (item) =>
-      measureTaskPipelineItemInterval(item, rowWidthPx)
-    );
-    laidOut = [];
-    for (const cluster of clusters) {
-      for (const member of cluster.members) {
-        laidOut.push({ item: member.item, row: member.row });
-      }
-    }
-  }
+  const ordered = [...items].sort(comparePipelineStackOrder);
+  const members = ordered.map((item) => {
+    const { start, end } = measureTaskPipelineItemInterval(item, rowWidthPx);
+    return { item, start, end };
+  });
+  packIntervalsInOrder(members);
+  const laidOut = members.map((member) => ({ item: member.item, row: member.relRow }));
 
   let maxRow = -1;
   for (const member of laidOut) {
@@ -6778,23 +6666,7 @@ function renderTasksPipeline(entries) {
 
     const dayOffsetDays = getTaskDayOffset(task.dueAt);
     const dayOffsetLabel = formatTaskDayOffset(task.dueAt);
-    const dayOffset = document.createElement("span");
-    dayOffset.className = "tasks-pipeline-day-offset";
-    if (dayOffsetDays > 0) dayOffset.classList.add("is-overdue");
-
-    const weekday = document.createElement("span");
-    weekday.className = "tasks-pipeline-weekday";
-    weekday.textContent = formatTaskWeekday(task.dueAt);
-
-    if (dayOffsetLabel) {
-      const count = document.createElement("span");
-      count.className = "tasks-pipeline-day-count";
-      count.textContent = dayOffsetLabel;
-      dayOffset.append(count, weekday);
-    } else {
-      dayOffset.append(weekday);
-    }
-    item.append(dayOffset);
+    const dueTime = normalizeTaskTime(task.dueTime);
 
     const bar = document.createElement("button");
     bar.type = "button";
@@ -6803,10 +6675,33 @@ function renderTasksPipeline(entries) {
     if (isTaskOverdue(task)) bar.classList.add("is-overdue");
     const companyTone = companyTones.get(taskPipelineCompanyKey(entry));
     if (companyTone) bar.dataset.companyTone = companyTone;
+    bar.classList.add(dayOffsetDays > 0 ? "has-meta-end" : "has-meta-start");
     bar.setAttribute(
       "aria-label",
-      `${task.text}, ${deal.company || "Untitled deal"}, ${taskTypeLabel(task.type) || "task"}, due ${formatTaskDueDate(task.dueAt)}`
+      `${task.text}, ${deal.company || "Untitled deal"}, ${taskTypeLabel(task.type) || "task"}, due ${formatTaskDueDate(task.dueAt)}${dueTime ? `, ${dueTime}` : ""}`
     );
+
+    const meta = document.createElement("span");
+    meta.className = "tasks-pipeline-bar-meta";
+
+    if (dayOffsetLabel) {
+      const count = document.createElement("span");
+      count.className = "tasks-pipeline-day-count";
+      count.textContent = dayOffsetLabel;
+      meta.append(count);
+    }
+
+    const weekday = document.createElement("span");
+    weekday.className = "tasks-pipeline-weekday";
+    weekday.textContent = formatTaskWeekday(task.dueAt);
+    meta.append(weekday);
+
+    if (dueTime) {
+      const time = document.createElement("span");
+      time.className = "tasks-pipeline-bar-time";
+      time.textContent = dueTime;
+      meta.append(time);
+    }
 
     const text = document.createElement("span");
     text.className = "tasks-pipeline-bar-text";
@@ -6820,7 +6715,7 @@ function renderTasksPipeline(entries) {
     company.textContent = taskPipelineCompanyLabel(deal);
 
     text.append(label, company);
-    bar.append(text);
+    bar.append(meta, text);
     const typeMark = createTaskTypeMark(task.type);
     if (typeMark) bar.append(typeMark);
     bar.addEventListener("mouseenter", () => showTasksPipelineTooltip(bar, deal, task));

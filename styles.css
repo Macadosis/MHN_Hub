@@ -2928,47 +2928,45 @@ body.is-card-dragging .card {
   max-width: none;
 }
 
-.tasks-pipeline-day-offset {
-  position: absolute;
-  right: 100%;
-  top: 50%;
-  transform: translateY(-50%);
-  margin-right: 5px;
-  display: inline-flex;
+.tasks-pipeline-bar-meta {
+  display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
+  flex: 0 0 30px;
+  width: 30px;
   gap: 1px;
-  flex-shrink: 0;
+  box-sizing: border-box;
+  border-right: 1px solid transparent;
+  border-right-color: inherit;
   font-family: var(--font-sans);
+  font-size: 6px;
+  font-weight: 500;
   line-height: 1;
-  color: #b0ada3;
-  white-space: nowrap;
+  letter-spacing: 0.02em;
+  color: #8a877e;
   pointer-events: none;
 }
 
-.tasks-pipeline-weekday {
+.tasks-pipeline-weekday,
+.tasks-pipeline-day-count,
+.tasks-pipeline-bar-time {
   font-size: 6px;
   font-weight: 500;
+  line-height: 1;
   letter-spacing: 0.02em;
 }
 
 .tasks-pipeline-day-count {
-  font-size: 10px;
-  font-weight: 500;
   font-variant-numeric: tabular-nums;
-}
-
-.tasks-pipeline-day-offset.is-overdue {
-  right: auto;
-  left: 100%;
-  margin-right: 0;
-  margin-left: 5px;
 }
 
 .tasks-pipeline-bar {
   position: relative;
+  display: inline-flex;
+  align-items: stretch;
   height: 27px;
-  padding: 0 18px 0 10px;
+  padding: 0;
   background: var(--tasks-pipe-soft);
   border: 1px solid var(--tasks-pipe);
   border-left-width: 4px;
@@ -2978,12 +2976,27 @@ body.is-card-dragging .card {
   font-family: var(--font-sans);
   text-align: left;
   width: max-content;
-  max-width: calc(23ch + 36px);
+  max-width: calc(23ch + 56px);
   min-width: 0;
   overflow: hidden;
   box-shadow: var(--shadow-card);
   transition: box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
   z-index: 3;
+}
+
+.tasks-pipeline-bar.has-meta-start {
+  margin-left: -30px;
+}
+
+.tasks-pipeline-bar.has-meta-end .tasks-pipeline-bar-meta {
+  order: 2;
+  border-right: none;
+  border-left: 1px solid transparent;
+  border-left-color: inherit;
+}
+
+.tasks-pipeline-bar.has-meta-end .task-type-mark {
+  right: 34px;
 }
 
 .tasks-pipeline-item:hover {
@@ -3062,6 +3075,7 @@ body.is-card-dragging .card {
   width: max-content;
   max-width: 23ch;
   min-width: 0;
+  padding: 0 18px 0 8px;
   pointer-events: none;
 }
 
