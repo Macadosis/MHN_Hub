@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=task-meta-section" />
+  <link rel="stylesheet" href="styles.css?v=note-files" />
 </head>
 <body class="is-logged-out">
 
@@ -767,21 +767,50 @@
           hidden
         >
           <div class="activity-log">
-            <label class="activity-notes-only">
-              <input type="checkbox" id="activityNotesOnly" form="mhn-activity-filter-unbound" />
-              <span>Notes only</span>
-            </label>
+            <div class="activity-filters">
+              <label class="activity-notes-only">
+                <input type="checkbox" id="activityNotesOnly" form="mhn-activity-filter-unbound" />
+                <span>Notes only</span>
+              </label>
+              <label class="activity-notes-only">
+                <input type="checkbox" id="activityAttachmentsOnly" form="mhn-activity-filter-unbound" />
+                <span>Attachments</span>
+              </label>
+            </div>
             <div class="activity-notes" id="activityNotes"></div>
             <div class="activity-composer">
-              <label class="field">
+              <div class="field">
                 <span class="field-label">New note</span>
-                <textarea
-                  id="newNoteInput"
-                  class="note-textarea"
-                  rows="3"
-                  placeholder="Write a note about this deal…"
-                ></textarea>
-              </label>
+                <div class="note-compose">
+                  <textarea
+                    id="newNoteInput"
+                    class="note-textarea"
+                    rows="3"
+                    placeholder="Write a note about this deal…"
+                  ></textarea>
+                  <button
+                    type="button"
+                    class="note-attach-btn"
+                    id="noteAttachBtn"
+                    aria-label="Attach a file"
+                    title="Attach a file"
+                  >
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" aria-hidden="true">
+                      <path d="M12 5v14M5 12h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+                    </svg>
+                  </button>
+                  <input
+                    type="file"
+                    id="noteFileInput"
+                    class="field-file-input"
+                    accept=".pdf,.png,.jpg,.jpeg,.gif,.webp,.bmp,.heic,.heif,.avif,.doc,.docx,.xls,.xlsx,application/pdf,image/png,image/jpeg,image/gif,image/webp,image/bmp,image/heic,image/heif,image/avif,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document,application/vnd.ms-excel,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                    multiple
+                    hidden
+                    form="mhn-note-file-unbound"
+                  />
+                </div>
+              </div>
+              <div class="note-pending-files" id="notePendingFiles"></div>
               <div class="activity-actions">
                 <button type="button" class="btn btn-ghost btn-sm" id="addNoteBtn">Add note</button>
               </div>
@@ -877,7 +906,7 @@
         <button class="icon-btn" id="pendingDraftCloseBtn" aria-label="Close">&times;</button>
       </div>
       <p class="modal-lead" id="pendingDraftLead">
-        You wrote a note that hasn’t been added yet. Add it before saving this deal?
+        You have a note that hasn’t been added yet. Add it before saving this deal?
       </p>
       <div class="modal-actions">
         <div class="modal-actions-right">
@@ -1096,8 +1125,8 @@
 
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="config.js"></script>
-  <script src="db.js?v=pin-press"></script>
+  <script src="db.js?v=note-files"></script>
   <script src="auth.js"></script>
-  <script src="app.js?v=task-meta-section"></script>
+  <script src="app.js?v=note-files"></script>
 </body>
 </html>

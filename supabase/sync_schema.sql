@@ -137,6 +137,63 @@ create policy "Authenticated users can delete contracts"
   to authenticated
   using (bucket_id = 'contracts');
 
+-- Private bucket for files attached to activity notes
+insert into storage.buckets (id, name, public, file_size_limit, allowed_mime_types)
+values (
+  'note-files',
+  'note-files',
+  false,
+  20971520,
+  array[
+    'application/pdf',
+    'image/png',
+    'image/jpeg',
+    'image/gif',
+    'image/webp',
+    'image/bmp',
+    'image/heic',
+    'image/heif',
+    'image/avif',
+    'application/msword',
+    'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    'application/vnd.ms-excel',
+    'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  ]
+)
+on conflict (id) do update set
+  public = excluded.public,
+  file_size_limit = excluded.file_size_limit,
+  allowed_mime_types = excluded.allowed_mime_types;
+
+drop policy if exists "Authenticated users can read note files" on storage.objects;
+create policy "Authenticated users can read note files"
+  on storage.objects
+  for select
+  to authenticated
+  using (bucket_id = 'note-files');
+
+drop policy if exists "Authenticated users can upload note files" on storage.objects;
+create policy "Authenticated users can upload note files"
+  on storage.objects
+  for insert
+  to authenticated
+  with check (bucket_id = 'note-files');
+
+drop policy if exists "Authenticated users can update note files" on storage.objects;
+create policy "Authenticated users can update note files"
+  on storage.objects
+  for update
+  to authenticated
+  using (bucket_id = 'note-files')
+  with check (bucket_id = 'note-files');
+
+drop policy if exists "Authenticated users can delete note files" on storage.objects;
+create policy "Authenticated users can delete note files"
+  on storage.objects
+  for delete
+  to authenticated
+  using (bucket_id = 'note-files');
+
 -- Optimistic concurrency: each successful write increments version
 alter table public.deals
   add column if not exists version bigint not null default 1;

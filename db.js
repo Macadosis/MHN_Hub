@@ -833,6 +833,71 @@ async function removeContractFile(path) {
   if (error) console.warn("Could not remove previous contract file:", error);
 }
 
+const NOTE_FILES_BUCKET = "note-files";
+const NOTE_FILE_SIGNED_URL_SECONDS = 60 * 60;
+const NOTE_FILE_MAX_BYTES = 20 * 1024 * 1024;
+const NOTE_FILE_MIME_BY_EXT = {
+  pdf: "application/pdf",
+  png: "image/png",
+  jpg: "image/jpeg",
+  jpeg: "image/jpeg",
+  gif: "image/gif",
+  webp: "image/webp",
+  bmp: "image/bmp",
+  heic: "image/heic",
+  heif: "image/heif",
+  avif: "image/avif",
+  doc: "application/msword",
+  docx: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  xls: "application/vnd.ms-excel",
+  xlsx: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+};
+
+function noteFileExtension(name) {
+  const match = String(name || "").toLowerCase().match(/\.([a-z0-9]{1,8})$/);
+  return match ? match[1] : "";
+}
+
+function noteFileContentType(file) {
+  return NOTE_FILE_MIME_BY_EXT[noteFileExtension(file?.name)] || "";
+}
+
+function isAllowedNoteFile(file) {
+  if (!file || file.size <= 0 || file.size > NOTE_FILE_MAX_BYTES) return false;
+  return Boolean(noteFileContentType(file));
+}
+
+async function uploadNoteFile(dealId, file) {
+  if (!db) throw new Error("Supabase is not configured");
+  assertCloudWriteAllowed();
+  if (!dealId) throw new Error("Missing deal id for file upload");
+  if (!isAllowedNoteFile(file)) {
+    throw new Error("Choose a PDF, image, Word, or Excel file under 20 MB");
+  }
+
+  const fileName = displayContractFileName(file.name || "file");
+  const path = `${dealId}/${Date.now()}-${storageContractFileName(file.name || "file")}`;
+  const contentType = noteFileContentType(file);
+  const { error } = await db.storage.from(NOTE_FILES_BUCKET).upload(path, file, {
+    cacheControl: "3600",
+    upsert: false,
+    contentType,
+  });
+  if (error) throw error;
+  return { path, fileName, mime: contentType, size: file.size || 0 };
+}
+
+async function getNoteFileUrl(path, fileName = "", { download = false } = {}) {
+  if (!db || !path) return null;
+  const downloadName = String(fileName || "").trim();
+  const options = download ? { download: downloadName || true } : undefined;
+  const { data, error } = await db.storage
+    .from(NOTE_FILES_BUCKET)
+    .createSignedUrl(path, NOTE_FILE_SIGNED_URL_SECONDS, options);
+  if (error) throw error;
+  return data?.signedUrl || null;
+}
+
 const KNOWLEDGE_STORAGE_KEY = "mhn-sales-knowledge";
 const KNOWLEDGE_PENDING_DELETES_KEY = "mhn-sales-knowledge-pending-deletes";
 /** False after this session learns the knowledge table is missing or unreadable. */
@@ -1129,4 +1194,8 @@ window.MHN_DB = {
   getContractFilePreviewUrl,
   removeContractFile,
   isAllowedContractFile,
+  uploadNoteFile,
+  getNoteFileUrl,
+  isAllowedNoteFile,
+  noteFileContentType,
 };

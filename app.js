@@ -29,6 +29,7 @@ const TASKS_PIPELINE_BAR_TOP = (TASKS_PIPELINE_ROW_HEIGHT - TASKS_PIPELINE_BAR_H
 let deals = [];
 let currentUser = null; // { name: string }
 let editingId = null;   // deal being edited in the modal (null = creating)
+let draftDealId = null; // id reserved for a deal that does not exist yet, so note files can upload first
 let modalReadOnly = false; // when true the modal shows a deal but blocks edits
 let createStage = "prospects"; // stage a new deal is created into
 let pendingCommitDeal = null; // deal awaiting implementation days before moving to Committed
@@ -154,7 +155,11 @@ let commitContractFilePath = "";
 let commitContractFileName = "";
 const activityNotesEl = document.getElementById("activityNotes");
 const activityNotesOnlyInput = document.getElementById("activityNotesOnly");
+const activityAttachmentsOnlyInput = document.getElementById("activityAttachmentsOnly");
 const newNoteInput = document.getElementById("newNoteInput");
+const noteAttachBtn = document.getElementById("noteAttachBtn");
+const noteFileInput = document.getElementById("noteFileInput");
+const notePendingFilesEl = document.getElementById("notePendingFiles");
 const companyDetailsFields = document.getElementById("companyDetailsFields");
 const companyBriefFields = document.getElementById("companyBriefFields");
 const companyHistoryFields = document.getElementById("companyHistoryFields");
@@ -822,12 +827,20 @@ const STAGE_PLACEMENT_NOTE_KIND = "stage";
 const PAUSED_NOTE_KIND = "paused";
 const UNPAUSED_NOTE_KIND = "unpaused";
 const ACTIVITY_NOTES_ONLY_KEY = "mhn-activity-notes-only";
+const ACTIVITY_ATTACHMENTS_ONLY_KEY = "mhn-activity-attachments-only";
 const ACTIVITY_NOTE_FOLD_ROWS = 12;
+const NOTE_FILE_MAX_COUNT = 10;
 
 let activityNotesOnly = false;
+let activityAttachmentsOnly = false;
+/** Files chosen in the composer, waiting for Add note. */
+let pendingNoteFiles = [];
+let noteFileUploadBusy = false;
 const expandedActivityNoteIds = new Set();
+const noteFileUrlCache = new Map();
 try {
   activityNotesOnly = localStorage.getItem(ACTIVITY_NOTES_ONLY_KEY) === "1";
+  activityAttachmentsOnly = localStorage.getItem(ACTIVITY_ATTACHMENTS_ONLY_KEY) === "1";
 } catch {
   /* preference is optional */
 }
@@ -993,6 +1006,317 @@ function dealShowsProgress(deal) {
 function dealProgressFilled(deal) {
   const flags = milestonesFromNotes(deal?.notes);
   return DEAL_MILESTONES.filter((milestone) => flags[milestone.id]).length;
+}
+
+function noteFileKind(fileName, mime) {
+  const name = String(fileName || "").toLowerCase();
+  const type = String(mime || "").toLowerCase();
+  if (type === "application/pdf" || name.endsWith(".pdf")) return "pdf";
+  if (
+    type.startsWith("image/") ||
+    /\.(png|jpe?g|gif|webp|bmp|heic|heif|avif)$/.test(name)
+  ) {
+    return "image";
+  }
+  if (
+    type === "application/msword" ||
+    type.includes("wordprocessingml") ||
+    /\.docx?$/.test(name)
+  ) {
+    return "word";
+  }
+  if (
+    type === "application/vnd.ms-excel" ||
+    type.includes("spreadsheetml") ||
+    /\.xlsx?$/.test(name)
+  ) {
+    return "excel";
+  }
+  return "file";
+}
+
+function noteFileCanPreview(kind) {
+  return kind === "pdf" || kind === "image";
+}
+
+function noteFileBadge(kind) {
+  if (kind === "pdf") return "PDF";
+  if (kind === "word") return "DOC";
+  if (kind === "excel") return "XLS";
+  if (kind === "image") return "IMG";
+  return "FILE";
+}
+
+function savedNoteFiles(note) {
+  if (!Array.isArray(note?.files)) return [];
+  return note.files.filter((file) => file && file.path);
+}
+
+function noteHasFiles(note) {
+  return savedNoteFiles(note).length > 0;
+}
+
+function revokeNotePreviewUrl(url) {
+  if (!url || !String(url).startsWith("blob:")) return;
+  setTimeout(() => URL.revokeObjectURL(url), 60_000);
+}
+
+function clearPendingNoteFiles() {
+  for (const file of pendingNoteFiles) revokeNotePreviewUrl(file.previewUrl);
+  pendingNoteFiles = [];
+  if (noteFileInput) noteFileInput.value = "";
+  renderPendingNoteFiles();
+}
+
+function ensureDraftDealId() {
+  if (editingId) return editingId;
+  if (!draftDealId) draftDealId = crypto.randomUUID();
+  return draftDealId;
+}
+
+async function noteFileSignedUrl(path, { downloadName = "" } = {}) {
+  const key = `${downloadName ? "dl" : "view"}:${path}:${downloadName}`;
+  const hit = noteFileUrlCache.get(key);
+  if (hit && hit.expiresAt > Date.now() + 60_000) return hit.url;
+  const api = window.MHN_DB;
+  if (!api?.getNoteFileUrl) return null;
+  const url = await api.getNoteFileUrl(path, downloadName, { download: Boolean(downloadName) });
+  if (url) noteFileUrlCache.set(key, { url, expiresAt: Date.now() + 50 * 60 * 1000 });
+  return url;
+}
+
+async function openNoteFile(file, mode) {
+  const kind = noteFileKind(file?.fileName, file?.mime);
+  const preview = mode !== "download";
+  if (preview && !noteFileCanPreview(kind)) return;
+
+  if (file?.localFile) {
+    if (!file.previewUrl) file.previewUrl = URL.createObjectURL(file.localFile);
+    if (preview) {
+      window.open(file.previewUrl, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = file.previewUrl;
+    link.download = file.fileName || "download";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    return;
+  }
+
+  if (!file?.path) return;
+  try {
+    const url = await noteFileSignedUrl(file.path, {
+      downloadName: preview ? "" : file.fileName || "download",
+    });
+    if (!url) throw new Error("No file URL");
+    if (preview) {
+      window.open(url, "_blank", "noopener,noreferrer");
+      return;
+    }
+    const link = document.createElement("a");
+    link.href = url;
+    link.rel = "noopener";
+    link.target = "_blank";
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+  } catch (err) {
+    console.error(err);
+    showSyncStatus(
+      `Could not ${preview ? "open" : "download"} “${file.fileName || "file"}”${syncErrorDetail(err)}`,
+      true,
+      true
+    );
+  }
+}
+
+function createNoteFileIcon(paths) {
+  const svg = createSvgEl("svg", {
+    width: "16",
+    height: "16",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    "aria-hidden": "true",
+  });
+  for (const attrs of paths) {
+    svg.appendChild(
+      createSvgEl("path", {
+        fill: "none",
+        stroke: "currentColor",
+        "stroke-width": "1.7",
+        "stroke-linecap": "round",
+        "stroke-linejoin": "round",
+        ...attrs,
+      })
+    );
+  }
+  return svg;
+}
+
+function createNoteFileAction(label, paths, onClick) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "note-file-action";
+  button.setAttribute("aria-label", label);
+  button.title = label;
+  button.appendChild(createNoteFileIcon(paths));
+  button.addEventListener("click", (event) => {
+    event.preventDefault();
+    event.stopPropagation();
+    onClick();
+  });
+  return button;
+}
+
+function mountNoteFileThumb(thumb, file) {
+  const kind = noteFileKind(file.fileName, file.mime);
+  thumb.classList.add(`is-${kind}`);
+  if (kind === "image" && file.previewUrl) {
+    const img = document.createElement("img");
+    img.alt = "";
+    img.src = file.previewUrl;
+    thumb.appendChild(img);
+    return;
+  }
+  const badge = document.createElement("span");
+  badge.className = "note-file-badge";
+  badge.textContent = noteFileBadge(kind);
+  thumb.appendChild(badge);
+  if (kind === "image" && file.path) {
+    noteFileSignedUrl(file.path)
+      .then((url) => {
+        if (!url || !thumb.isConnected) return;
+        const img = document.createElement("img");
+        img.alt = "";
+        img.src = url;
+        thumb.replaceChildren(img);
+      })
+      .catch((err) => console.warn("Could not load image thumbnail:", err));
+  }
+}
+
+function createNoteFileRow(file, { removable = false, onRemove = null } = {}) {
+  const kind = noteFileKind(file.fileName, file.mime);
+  const previewable = noteFileCanPreview(kind);
+  const row = document.createElement("div");
+  row.className = "note-file";
+
+  const main = document.createElement(previewable ? "button" : "div");
+  main.className = "note-file-main";
+  if (previewable) {
+    main.type = "button";
+    main.setAttribute("aria-label", `Open ${file.fileName || "file"}`);
+    main.title = "Open in a new tab";
+    main.addEventListener("click", () => openNoteFile(file, "preview"));
+  }
+
+  const thumb = document.createElement("span");
+  thumb.className = "note-file-thumb";
+  mountNoteFileThumb(thumb, file);
+
+  const name = document.createElement("span");
+  name.className = "note-file-name";
+  name.textContent = file.fileName || "File";
+  name.title = file.fileName || "";
+  main.append(thumb, name);
+
+  const actions = document.createElement("div");
+  actions.className = "note-file-actions";
+  if (previewable) {
+    actions.appendChild(
+      createNoteFileAction(
+        `Preview ${file.fileName || "file"}`,
+        [
+          { d: "M2.5 12S6 6.5 12 6.5 21.5 12 21.5 12 18 17.5 12 17.5 2.5 12 2.5 12Z" },
+          { d: "M12 9.6a2.4 2.4 0 1 0 0 4.8 2.4 2.4 0 0 0 0-4.8Z" },
+        ],
+        () => openNoteFile(file, "preview")
+      )
+    );
+  }
+  actions.appendChild(
+    createNoteFileAction(
+      `Download ${file.fileName || "file"}`,
+      [
+        { d: "M12 4v10" },
+        { d: "m8 10.5 4 4 4-4" },
+        { d: "M5 19h14" },
+      ],
+      () => openNoteFile(file, "download")
+    )
+  );
+  if (removable && onRemove) {
+    actions.appendChild(
+      createNoteFileAction("Remove file", [{ d: "M7 7l10 10M17 7 7 17" }], onRemove)
+    );
+  }
+
+  row.append(main, actions);
+  return row;
+}
+
+function createNoteFilesEl(files) {
+  if (!files.length) return null;
+  const list = document.createElement("div");
+  list.className = "activity-note-files";
+  for (const file of files) list.appendChild(createNoteFileRow(file));
+  return list;
+}
+
+function renderPendingNoteFiles() {
+  if (!notePendingFilesEl) return;
+  notePendingFilesEl.innerHTML = "";
+  for (const file of pendingNoteFiles) {
+    notePendingFilesEl.appendChild(
+      createNoteFileRow(file, {
+        removable: true,
+        onRemove: () => removePendingNoteFile(file.id),
+      })
+    );
+  }
+}
+
+function removePendingNoteFile(id) {
+  const file = pendingNoteFiles.find((item) => item.id === id);
+  if (file?.previewUrl) revokeNotePreviewUrl(file.previewUrl);
+  pendingNoteFiles = pendingNoteFiles.filter((item) => item.id !== id);
+  renderPendingNoteFiles();
+}
+
+function acceptNoteFiles(fileList) {
+  const incoming = Array.from(fileList || []);
+  if (!incoming.length) return;
+  const api = window.MHN_DB;
+  let rejectedType = 0;
+  let rejectedCap = 0;
+  for (const file of incoming) {
+    if (pendingNoteFiles.length >= NOTE_FILE_MAX_COUNT) {
+      rejectedCap += 1;
+      continue;
+    }
+    if (!api?.isAllowedNoteFile || !api.isAllowedNoteFile(file)) {
+      rejectedType += 1;
+      continue;
+    }
+    const mime = api.noteFileContentType(file);
+    const kind = noteFileKind(file.name, mime);
+    pendingNoteFiles.push({
+      id: crypto.randomUUID(),
+      localFile: file,
+      fileName: file.name,
+      mime,
+      size: file.size || 0,
+      previewUrl: kind === "image" ? URL.createObjectURL(file) : "",
+    });
+  }
+  if (rejectedType) {
+    showSyncStatus("Choose a PDF, image, Word, or Excel file under 20 MB", true, true);
+  } else if (rejectedCap) {
+    showSyncStatus("You can attach up to 10 files on a note", true, true);
+  }
+  renderPendingNoteFiles();
 }
 
 function isAutomaticActivityNote(note) {
@@ -5335,16 +5659,17 @@ function renderActivityNotes() {
     if (aBirth !== bBirth) return aBirth - bBirth;
     return (b.createdAt || 0) - (a.createdAt || 0);
   });
-  const visible = activityNotesOnly
+  let visible = activityNotesOnly
     ? sorted.filter((note) => !isAutomaticActivityNote(note))
     : sorted;
+  if (activityAttachmentsOnly) visible = visible.filter(noteHasFiles);
 
   if (!visible.length) {
     const empty = document.createElement("p");
     empty.className = "activity-empty";
-    empty.textContent = activityEntries.length
-      ? "Automatic activity is hidden."
-      : "No notes yet. Add the first one below.";
+    if (!activityEntries.length) empty.textContent = "No notes yet. Add the first one below.";
+    else if (activityAttachmentsOnly) empty.textContent = "No notes with files.";
+    else empty.textContent = "Automatic activity is hidden.";
     activityNotesEl.appendChild(empty);
     return;
   }
@@ -5358,13 +5683,20 @@ function renderActivityNotes() {
     time.className = "activity-note-time";
     updateActivityNoteTime(note, time);
 
+    const filesEl = createNoteFilesEl(savedNoteFiles(note));
     const isSystem = isAutomaticActivityNote(note);
+    if (!isSystem && !(note.text || "").trim() && filesEl) {
+      card.append(time, filesEl);
+      activityNotesEl.appendChild(card);
+      continue;
+    }
     if (isSystem) {
       card.classList.add("is-system");
       const body = document.createElement("p");
       body.className = "activity-note-text";
       body.textContent = note.text;
       card.append(time, body);
+      if (filesEl) card.append(filesEl);
       activityNotesEl.appendChild(card);
       fitActivityNote(card, body);
       continue;
@@ -5410,14 +5742,60 @@ function renderActivityNotes() {
     activityNotesEl.appendChild(card);
     resizeActivityNote(textarea);
     fitActivityNote(card, textarea);
+    if (filesEl) card.append(filesEl);
   }
 }
 
-function addActivityNote() {
+async function addActivityNote() {
   const text = newNoteInput.value.trim();
-  if (!text) {
+  const attachments = pendingNoteFiles.slice();
+  if (!text && !attachments.length) {
     newNoteInput.focus();
-    return;
+    return false;
+  }
+  if (noteFileUploadBusy) return false;
+
+  let storedFiles = [];
+  if (attachments.length) {
+    const api = window.MHN_DB;
+    if (!api?.uploadNoteFile) {
+      showSyncStatus("File upload unavailable", true, true);
+      return false;
+    }
+    if (!api.cloudWriteEnabled) {
+      showSyncStatus("File upload needs the deployed app while signed in", true, true);
+      return false;
+    }
+    const dealId = ensureDraftDealId();
+    const addBtn = document.getElementById("addNoteBtn");
+    noteFileUploadBusy = true;
+    if (addBtn) {
+      addBtn.disabled = true;
+      addBtn.textContent = "Adding…";
+    }
+    if (noteAttachBtn) noteAttachBtn.disabled = true;
+    try {
+      for (const item of attachments) {
+        const uploaded = await api.uploadNoteFile(dealId, item.localFile);
+        storedFiles.push({
+          path: uploaded.path,
+          fileName: uploaded.fileName || item.fileName,
+          mime: uploaded.mime || item.mime,
+          size: uploaded.size || item.size || 0,
+        });
+      }
+    } catch (err) {
+      console.error(err);
+      showSyncStatus(`Could not upload file${syncErrorDetail(err)}`, true, true);
+      return false;
+    } finally {
+      noteFileUploadBusy = false;
+      if (addBtn) {
+        addBtn.disabled = false;
+        addBtn.textContent = "Add note";
+      }
+      if (noteAttachBtn) noteAttachBtn.disabled = false;
+    }
   }
 
   modalNotes.push({
@@ -5427,9 +5805,12 @@ function addActivityNote() {
     updatedAt: null,
     createdBy: stampCurrentUser(),
     updatedBy: "",
+    ...(storedFiles.length ? { files: storedFiles } : {}),
   });
   newNoteInput.value = "";
+  clearPendingNoteFiles();
   renderActivityNotes();
+  return true;
 }
 
 function renderDealTasks() {
@@ -6823,11 +7204,17 @@ function openModal({
   focusTaskId = null,
 } = {}) {
   editingId = deal ? deal.id : null;
+  draftDealId = deal ? null : crypto.randomUUID();
   modalReadOnly = readOnly && Boolean(deal);
   expandedActivityNoteIds.clear();
   createStage = stage;
   modalNotes = deal
-    ? (deal.notes || []).map((note) => ({ ...note }))
+    ? (deal.notes || []).map((note) => ({
+        ...note,
+        ...(Array.isArray(note.files)
+          ? { files: note.files.map((file) => ({ ...file })) }
+          : {}),
+      }))
     : [];
   modalMilestones = milestonesFromNotes(modalNotes);
   modalTasks = deal
@@ -6888,6 +7275,7 @@ function openModal({
   setCompanyDetailTab("details");
 
   newNoteInput.value = "";
+  clearPendingNoteFiles();
   newTaskNameInput.value = "";
   newTaskDueInput.value = "";
   if (newTaskTimeInput) {
@@ -6965,9 +7353,11 @@ function closeModal() {
   closePendingDraftModal();
   overlay.hidden = true;
   editingId = null;
+  draftDealId = null;
   modalReadOnly = false;
   applyModalReadOnly(false);
   modalNotes = [];
+  clearPendingNoteFiles();
   modalMilestones = emptyMilestones();
   modalTasks = [];
   resetDealContractFileState(null);
@@ -7056,7 +7446,7 @@ function permanentlyDeleteDeal() {
 }
 
 function hasPendingNoteDraft() {
-  return Boolean(newNoteInput?.value.trim());
+  return Boolean(newNoteInput?.value.trim() || pendingNoteFiles.length);
 }
 
 function hasPendingTaskDraft() {
@@ -7079,7 +7469,7 @@ function openPendingDraftModal(kind) {
   } else {
     pendingDraftTitle.textContent = "Unadded note";
     pendingDraftLead.textContent =
-      "You wrote a note that hasn’t been added yet. Add it before saving this deal?";
+      "You have a note that hasn’t been added yet. Add it before saving this deal?";
     pendingDraftConfirmBtn.textContent = "Yes, add note";
   }
   pendingDraftOverlay.hidden = false;
@@ -7087,8 +7477,8 @@ function openPendingDraftModal(kind) {
 
 async function confirmPendingDraft() {
   if (pendingDraftKind === "note") {
-    addActivityNote();
-    if (hasPendingNoteDraft()) return;
+    const added = await addActivityNote();
+    if (!added) return;
     closePendingDraftModal();
     if (hasPendingTaskDraft()) {
       openPendingDraftModal("task");
@@ -7263,7 +7653,7 @@ async function saveDealFromForm() {
     }
   }
 
-  const fileDealId = editingId || crypto.randomUUID();
+  const fileDealId = editingId || draftDealId || crypto.randomUUID();
   try {
     const uploaded = await ensureContractFileUploaded(fileDealId, {
       pendingFile: modalToolFile,
@@ -7296,19 +7686,28 @@ async function saveDealFromForm() {
     supportMonthly: parseSupportMonthly(form.elements.supportMonthly?.value),
     owner: toTitleCase(form.elements.owner.value),
     notes: modalNotes
-      .map((note) => ({
-        id: note.id,
-        text: note.text.trim(),
-        createdAt: note.createdAt,
-        updatedAt: noteWasEdited(note) ? note.updatedAt : note.createdAt,
-        createdBy: String(note.createdBy || "").trim(),
-        updatedBy: noteWasEdited(note)
-          ? String(note.updatedBy || stampCurrentUser(note.createdBy)).trim()
-          : String(note.createdBy || "").trim(),
-        ...(note.kind ? { kind: note.kind } : {}),
-        ...(note.stage ? { stage: note.stage } : {}),
-      }))
-      .filter((note) => note.text),
+      .map((note) => {
+        const files = savedNoteFiles(note).map((file) => ({
+          path: String(file.path),
+          fileName: String(file.fileName || "file"),
+          mime: String(file.mime || ""),
+          size: Number(file.size) > 0 ? Number(file.size) : 0,
+        }));
+        return {
+          id: note.id,
+          text: (note.text || "").trim(),
+          createdAt: note.createdAt,
+          updatedAt: noteWasEdited(note) ? note.updatedAt : note.createdAt,
+          createdBy: String(note.createdBy || "").trim(),
+          updatedBy: noteWasEdited(note)
+            ? String(note.updatedBy || stampCurrentUser(note.createdBy)).trim()
+            : String(note.createdBy || "").trim(),
+          ...(note.kind ? { kind: note.kind } : {}),
+          ...(note.stage ? { stage: note.stage } : {}),
+          ...(files.length ? { files } : {}),
+        };
+      })
+      .filter((note) => note.text || (note.files && note.files.length)),
     tasks: serializeModalTasks().map((task) => ({
       ...task,
       updatedAt: taskWasEdited(task) ? task.updatedAt : task.createdAt,
@@ -7499,8 +7898,32 @@ if (activityNotesOnlyInput) {
     renderActivityNotes();
   });
 }
+if (activityAttachmentsOnlyInput) {
+  activityAttachmentsOnlyInput.checked = activityAttachmentsOnly;
+  activityAttachmentsOnlyInput.addEventListener("change", () => {
+    activityAttachmentsOnly = activityAttachmentsOnlyInput.checked;
+    try {
+      localStorage.setItem(ACTIVITY_ATTACHMENTS_ONLY_KEY, activityAttachmentsOnly ? "1" : "0");
+    } catch {
+      /* preference is optional */
+    }
+    renderActivityNotes();
+  });
+}
 
-document.getElementById("addNoteBtn").addEventListener("click", addActivityNote);
+noteAttachBtn?.addEventListener("click", () => {
+  if (modalReadOnly || noteFileUploadBusy) return;
+  noteFileInput?.click();
+});
+noteFileInput?.addEventListener("change", () => {
+  const files = noteFileInput.files;
+  if (files?.length) acceptNoteFiles(files);
+  noteFileInput.value = "";
+});
+
+document.getElementById("addNoteBtn").addEventListener("click", () => {
+  addActivityNote();
+});
 document.getElementById("addTaskBtn").addEventListener("click", addDealTask);
 newTaskNameInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") {
