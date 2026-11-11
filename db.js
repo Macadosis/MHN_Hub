@@ -833,7 +833,8 @@ async function removeContractFile(path) {
   if (error) console.warn("Could not remove previous contract file:", error);
 }
 
-const NOTE_FILES_BUCKET = "note-files";
+// Notes share the existing contracts bucket so uploads work before a new bucket is created.
+const NOTE_FILES_BUCKET = CONTRACTS_BUCKET;
 const NOTE_FILE_SIGNED_URL_SECONDS = 60 * 60;
 const NOTE_FILE_MAX_BYTES = 20 * 1024 * 1024;
 const NOTE_FILE_MIME_BY_EXT = {
@@ -876,7 +877,7 @@ async function uploadNoteFile(dealId, file) {
   }
 
   const fileName = displayContractFileName(file.name || "file");
-  const path = `${dealId}/${Date.now()}-${storageContractFileName(file.name || "file")}`;
+  const path = `${dealId}/notes/${Date.now()}-${storageContractFileName(file.name || "file")}`;
   const contentType = noteFileContentType(file);
   const { error } = await db.storage.from(NOTE_FILES_BUCKET).upload(path, file, {
     cacheControl: "3600",
