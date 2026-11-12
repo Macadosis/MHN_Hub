@@ -131,6 +131,8 @@ const pendingDraftTitle = document.getElementById("pendingDraftTitle");
 const pendingDraftLead = document.getElementById("pendingDraftLead");
 const pendingDraftConfirmBtn = document.getElementById("pendingDraftConfirmBtn");
 let pendingDraftKind = null; // "note" | "task"
+const deleteNoteOverlay = document.getElementById("deleteNoteOverlay");
+let pendingDeleteNoteId = null;
 
 const commitOverlay = document.getElementById("commitOverlay");
 const commitForm = document.getElementById("commitForm");
@@ -1134,8 +1136,8 @@ async function openNoteFile(file, mode) {
 
 function createNoteFileIcon(paths) {
   const svg = createSvgEl("svg", {
-    width: "16",
-    height: "16",
+    width: "12",
+    height: "12",
     viewBox: "0 0 24 24",
     fill: "none",
     "aria-hidden": "true",
@@ -5643,6 +5645,62 @@ function fitActivityNote(card, body) {
   if (button) syncActivityNoteExpand(button, expanded);
 }
 
+function createActivityNoteDelete(note) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "activity-note-delete";
+  button.setAttribute("aria-label", "Delete note");
+  button.title = "Delete note";
+  const icon = createSvgEl("svg", {
+    width: "14",
+    height: "14",
+    viewBox: "0 0 24 24",
+    fill: "none",
+    "aria-hidden": "true",
+  });
+  icon.appendChild(
+    createSvgEl("path", {
+      d: "M7 7l10 10M17 7 7 17",
+      fill: "none",
+      stroke: "currentColor",
+      "stroke-width": "1.7",
+      "stroke-linecap": "round",
+    })
+  );
+  button.appendChild(icon);
+  button.addEventListener("click", () => openDeleteNoteModal(note.id));
+  return button;
+}
+
+function createActivityNoteHead(note, time, { canDelete = false } = {}) {
+  const head = document.createElement("div");
+  head.className = "activity-note-head";
+  head.append(time);
+  if (canDelete) head.append(createActivityNoteDelete(note));
+  return head;
+}
+
+function openDeleteNoteModal(noteId) {
+  if (modalReadOnly || !noteId || !deleteNoteOverlay) return;
+  pendingDeleteNoteId = noteId;
+  deleteNoteOverlay.hidden = false;
+}
+
+function closeDeleteNoteModal() {
+  if (!deleteNoteOverlay) return;
+  deleteNoteOverlay.hidden = true;
+  pendingDeleteNoteId = null;
+}
+
+function confirmDeleteNote() {
+  const id = pendingDeleteNoteId;
+  if (!id) return;
+  modalNotes = modalNotes.filter((note) => note.id !== id);
+  expandedActivityNoteIds.delete(id);
+  closeDeleteNoteModal();
+  renderActivityNotes();
+}
+
 function renderActivityNotes() {
   activityNotesEl.innerHTML = "";
 
@@ -5685,8 +5743,9 @@ function renderActivityNotes() {
 
     const filesEl = createNoteFilesEl(savedNoteFiles(note));
     const isSystem = isAutomaticActivityNote(note);
+    const head = createActivityNoteHead(note, time, { canDelete: !isSystem && !modalReadOnly });
     if (!isSystem && !(note.text || "").trim() && filesEl) {
-      card.append(time, filesEl);
+      card.append(head, filesEl);
       activityNotesEl.appendChild(card);
       continue;
     }
@@ -5695,7 +5754,7 @@ function renderActivityNotes() {
       const body = document.createElement("p");
       body.className = "activity-note-text";
       body.textContent = note.text;
-      card.append(time, body);
+      card.append(head, body);
       if (filesEl) card.append(filesEl);
       activityNotesEl.appendChild(card);
       fitActivityNote(card, body);
@@ -5738,7 +5797,7 @@ function renderActivityNotes() {
       });
     });
 
-    card.append(time, textarea);
+    card.append(head, textarea);
     activityNotesEl.appendChild(card);
     resizeActivityNote(textarea);
     fitActivityNote(card, textarea);
@@ -7351,6 +7410,7 @@ function applyModalReadOnly(isReadOnly) {
 function closeModal() {
   closeAllFieldSuggestions();
   closePendingDraftModal();
+  closeDeleteNoteModal();
   overlay.hidden = true;
   editingId = null;
   draftDealId = null;
@@ -8019,6 +8079,13 @@ pauseOverlay.addEventListener("click", (e) => {
   if (e.target === pauseOverlay) closePauseModal();
 });
 
+document.getElementById("deleteNoteConfirmBtn").addEventListener("click", confirmDeleteNote);
+document.getElementById("deleteNoteCancelBtn").addEventListener("click", closeDeleteNoteModal);
+document.getElementById("deleteNoteCloseBtn").addEventListener("click", closeDeleteNoteModal);
+deleteNoteOverlay?.addEventListener("click", (e) => {
+  if (e.target === deleteNoteOverlay) closeDeleteNoteModal();
+});
+
 document.getElementById("pendingDraftConfirmBtn").addEventListener("click", confirmPendingDraft);
 document.getElementById("pendingDraftCancelBtn").addEventListener("click", closePendingDraftModal);
 document.getElementById("pendingDraftCloseBtn").addEventListener("click", closePendingDraftModal);
@@ -8032,6 +8099,7 @@ document.getElementById("cancelBtn").addEventListener("click", closeModal);
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
   if (!knowledgeDeleteOverlay.hidden) closeKnowledgeDeleteModal();
+  else if (deleteNoteOverlay && !deleteNoteOverlay.hidden) closeDeleteNoteModal();
   else if (!pendingDraftOverlay.hidden) closePendingDraftModal();
   else if (!pauseOverlay.hidden) closePauseModal();
   else if (!dismissOverlay.hidden) closeDismissModal();

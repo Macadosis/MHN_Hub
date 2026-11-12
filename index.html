@@ -14,7 +14,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,500;8..60,600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
-  <link rel="stylesheet" href="styles.css?v=note-files" />
+  <link rel="stylesheet" href="styles.css?v=note-file-compact" />
 </head>
 <body class="is-logged-out">
 
@@ -936,6 +936,25 @@
     </div>
   </div>
 
+  <!-- Delete activity note confirmation -->
+  <div class="modal-overlay" id="deleteNoteOverlay" hidden>
+    <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="deleteNoteTitle">
+      <div class="modal-header">
+        <h2 id="deleteNoteTitle">Delete note</h2>
+        <button class="icon-btn" id="deleteNoteCloseBtn" aria-label="Close">&times;</button>
+      </div>
+      <p class="modal-lead" id="deleteNoteLead">
+        Are you sure you want to delete this note?
+      </p>
+      <div class="modal-actions">
+        <div class="modal-actions-right">
+          <button type="button" class="btn btn-ghost" id="deleteNoteCancelBtn">No, go back</button>
+          <button type="button" class="btn btn-primary" id="deleteNoteConfirmBtn">Yes, delete</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- Delete knowledge entry confirmation -->
   <div class="modal-overlay" id="knowledgeDeleteOverlay" hidden>
     <div class="modal modal-sm" role="dialog" aria-modal="true" aria-labelledby="knowledgeDeleteTitle">
@@ -1127,6 +1146,6 @@
   <script src="config.js"></script>
   <script src="db.js?v=note-files-contracts"></script>
   <script src="auth.js"></script>
-  <script src="app.js?v=note-files"></script>
+  <script src="app.js?v=note-file-compact"></script>
 </body>
 </html>

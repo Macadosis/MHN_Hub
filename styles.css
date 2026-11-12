@@ -3862,9 +3862,44 @@ body.is-card-dragging .card {
   border-color: var(--line);
 }
 
+.activity-note-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  width: 100%;
+  min-width: 0;
+}
+
 .activity-note-time {
   font-size: 12px;
   color: var(--ink-faint);
+  min-width: 0;
+}
+
+.activity-note-delete {
+  width: 22px;
+  height: 22px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--ink-faint);
+  cursor: pointer;
+  padding: 0;
+}
+
+.activity-note-delete:hover {
+  color: var(--danger);
+  background: var(--bg-sunken);
+}
+
+.activity-note-delete:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
 }
 
 .activity-note-text {
@@ -4032,8 +4067,9 @@ body.is-card-dragging .card {
 .note-pending-files,
 .activity-note-files {
   display: flex;
-  flex-direction: column;
-  gap: 8px;
+  flex-wrap: wrap;
+  align-items: stretch;
+  gap: 6px;
   width: 100%;
   min-width: 0;
 }
@@ -4049,20 +4085,20 @@ body.is-card-dragging .card {
 .note-file {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 100%;
-  max-width: 100%;
+  gap: 4px;
+  width: calc(50% - 3px);
+  max-width: calc(50% - 3px);
   min-width: 0;
-  padding: 6px;
+  padding: 3px;
   background: var(--surface);
   border: 1px solid var(--line);
-  border-radius: var(--radius-md);
+  border-radius: 8px;
 }
 
 .note-file-main {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 5px;
   min-width: 0;
   flex: 1;
   padding: 0;
@@ -4088,19 +4124,19 @@ button.note-file-main:focus-visible {
 }
 
 .note-file-thumb {
-  width: 48px;
-  height: 48px;
+  width: 24px;
+  height: 24px;
   flex-shrink: 0;
-  border-radius: 8px;
+  border-radius: 4px;
   overflow: hidden;
   display: flex;
   align-items: center;
   justify-content: center;
   background: var(--bg-sunken);
   color: var(--ink-soft);
-  font-size: 11px;
+  font-size: 8px;
   font-weight: 600;
-  letter-spacing: 0.04em;
+  letter-spacing: 0.02em;
 }
 
 .note-file-thumb img {
@@ -4130,21 +4166,21 @@ button.note-file-main:focus-visible {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  font-size: 13px;
-  line-height: 1.3;
+  font-size: 11px;
+  line-height: 1.2;
   color: var(--ink-soft);
 }
 
 .note-file-actions {
   display: flex;
   align-items: center;
-  gap: 2px;
+  gap: 0;
   flex-shrink: 0;
 }
 
 .note-file-action {
-  width: 28px;
-  height: 28px;
+  width: 18px;
+  height: 18px;
   display: inline-flex;
   align-items: center;
   justify-content: center;
