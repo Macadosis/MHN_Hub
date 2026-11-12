@@ -4026,9 +4026,13 @@ body.is-card-dragging .card {
 
 .note-compose {
   position: relative;
+  line-height: 0;
 }
 
 .note-compose .note-textarea {
+  display: block;
+  margin: 0;
+  line-height: 1.45;
   padding-bottom: 40px;
 }
 
