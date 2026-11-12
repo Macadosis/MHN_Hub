@@ -160,6 +160,11 @@ const activityNotesOnlyInput = document.getElementById("activityNotesOnly");
 const activityAttachmentsOnlyInput = document.getElementById("activityAttachmentsOnly");
 const newNoteInput = document.getElementById("newNoteInput");
 const noteAttachBtn = document.getElementById("noteAttachBtn");
+const noteWhenBtn = document.getElementById("noteWhenBtn");
+const noteWhenInput = document.getElementById("noteWhenInput");
+const noteWhenLabel = document.getElementById("noteWhenLabel");
+const noteWhenChip = document.getElementById("noteWhenChip");
+const noteWhenClearBtn = document.getElementById("noteWhenClearBtn");
 const noteFileInput = document.getElementById("noteFileInput");
 const notePendingFilesEl = document.getElementById("notePendingFiles");
 const companyDetailsFields = document.getElementById("companyDetailsFields");
@@ -1068,6 +1073,35 @@ function clearPendingNoteFiles() {
   pendingNoteFiles = [];
   if (noteFileInput) noteFileInput.value = "";
   renderPendingNoteFiles();
+}
+
+function noteWhenValue() {
+  const value = String(noteWhenInput?.value || "").trim();
+  if (!value) return null;
+  const parsed = new Date(value).getTime();
+  return Number.isFinite(parsed) ? parsed : null;
+}
+
+function syncNoteWhen() {
+  const when = noteWhenValue();
+  const set = when != null;
+  noteWhenBtn?.classList.toggle("is-set", set);
+  if (noteWhenLabel) noteWhenLabel.textContent = set ? formatNoteTimestamp(when) : "";
+  if (noteWhenChip) noteWhenChip.hidden = !set;
+  if (noteWhenBtn) {
+    const label = set
+      ? `Note time: ${formatNoteTimestamp(when)}`
+      : "Set note date and time";
+    noteWhenBtn.setAttribute("aria-label", label);
+    noteWhenBtn.title = set
+      ? label
+      : "Set date and time. Leave empty to use the time the note is added.";
+  }
+}
+
+function clearNoteWhen() {
+  if (noteWhenInput) noteWhenInput.value = "";
+  syncNoteWhen();
 }
 
 function ensureDraftDealId() {
@@ -5833,6 +5867,7 @@ async function addActivityNote() {
       addBtn.textContent = "Adding…";
     }
     if (noteAttachBtn) noteAttachBtn.disabled = true;
+    if (noteWhenBtn) noteWhenBtn.disabled = true;
     try {
       for (const item of attachments) {
         const uploaded = await api.uploadNoteFile(dealId, item.localFile);
@@ -5854,19 +5889,21 @@ async function addActivityNote() {
         addBtn.textContent = "Add note";
       }
       if (noteAttachBtn) noteAttachBtn.disabled = false;
+      if (noteWhenBtn) noteWhenBtn.disabled = false;
     }
   }
 
   modalNotes.push({
     id: crypto.randomUUID(),
     text,
-    createdAt: Date.now(),
+    createdAt: noteWhenValue() ?? Date.now(),
     updatedAt: null,
     createdBy: stampCurrentUser(),
     updatedBy: "",
     ...(storedFiles.length ? { files: storedFiles } : {}),
   });
   newNoteInput.value = "";
+  clearNoteWhen();
   clearPendingNoteFiles();
   renderActivityNotes();
   return true;
@@ -7334,6 +7371,7 @@ function openModal({
   setCompanyDetailTab("details");
 
   newNoteInput.value = "";
+  clearNoteWhen();
   clearPendingNoteFiles();
   newTaskNameInput.value = "";
   newTaskDueInput.value = "";
@@ -7423,6 +7461,7 @@ function closeModal() {
   resetDealContractFileState(null);
   resetDealToolFileState(null);
   newNoteInput.value = "";
+  clearNoteWhen();
   newTaskNameInput.value = "";
   newTaskDueInput.value = "";
   if (newTaskTimeInput) {
@@ -7974,6 +8013,20 @@ if (activityAttachmentsOnlyInput) {
 noteAttachBtn?.addEventListener("click", () => {
   if (modalReadOnly || noteFileUploadBusy) return;
   noteFileInput?.click();
+});
+noteWhenBtn?.addEventListener("click", () => {
+  if (modalReadOnly || noteFileUploadBusy || !noteWhenInput) return;
+  noteWhenInput.focus();
+  try {
+    if (typeof noteWhenInput.showPicker === "function") noteWhenInput.showPicker();
+    else noteWhenInput.click();
+  } catch {
+    noteWhenInput.click();
+  }
+});
+noteWhenInput?.addEventListener("change", syncNoteWhen);
+noteWhenClearBtn?.addEventListener("click", () => {
+  clearNoteWhen();
 });
 noteFileInput?.addEventListener("change", () => {
   const files = noteFileInput.files;

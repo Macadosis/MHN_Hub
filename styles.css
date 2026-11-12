@@ -4032,18 +4032,31 @@ body.is-card-dragging .card {
   padding-bottom: 40px;
 }
 
-.note-attach-btn {
+.note-compose-tools {
   position: absolute;
   left: 8px;
   bottom: 8px;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100% - 36px);
+  min-width: 0;
+}
+
+.note-attach-btn {
+  position: relative;
+  z-index: 2;
   width: 28px;
   height: 28px;
+  flex-shrink: 0;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: none;
-  border-radius: var(--radius-sm);
-  background: transparent;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(20, 20, 19, 0.06);
   color: var(--ink-faint);
   cursor: pointer;
   padding: 0;
@@ -4051,7 +4064,7 @@ body.is-card-dragging .card {
 
 .note-attach-btn:hover {
   color: var(--ink);
-  background: var(--bg-sunken);
+  background: var(--bg);
 }
 
 .note-attach-btn:focus-visible {
@@ -4062,6 +4075,73 @@ body.is-card-dragging .card {
 .note-attach-btn:disabled {
   opacity: 0.45;
   cursor: default;
+}
+
+.note-attach-btn.is-set {
+  color: var(--chip-contract-ink);
+  background: var(--chip-contract-bg);
+}
+
+.note-attach-btn.is-set:hover {
+  color: var(--ink);
+}
+
+.note-when-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  min-width: 0;
+  max-width: 100%;
+  height: 28px;
+  padding: 0 4px 0 10px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 1px 2px rgba(20, 20, 19, 0.06);
+}
+
+.note-when-chip[hidden] {
+  display: none;
+}
+
+.note-when-label {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 12px;
+  line-height: 1.2;
+  color: var(--ink-soft);
+}
+
+.note-when-clear {
+  width: 18px;
+  height: 18px;
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--ink-faint);
+  font-size: 14px;
+  line-height: 1;
+  cursor: pointer;
+  padding: 0;
+}
+
+.note-when-clear:hover {
+  color: var(--ink);
+  background: var(--bg-sunken);
+}
+
+.note-when-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+  pointer-events: none;
 }
 
 .note-pending-files,
