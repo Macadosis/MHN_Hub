@@ -8087,6 +8087,9 @@ document.addEventListener("click", () => {
 document.querySelector("#modalOverlay .modal")?.addEventListener("scroll", () => {
   closeNoteWhenPopover();
 });
+activityNotesEl?.addEventListener("scroll", () => {
+  closeNoteWhenPopover();
+});
 noteFileInput?.addEventListener("change", () => {
   const files = noteFileInput.files;
   if (files?.length) acceptNoteFiles(files);

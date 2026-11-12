@@ -3493,6 +3493,34 @@ body.is-card-dragging .card {
   box-shadow: var(--shadow-lift);
   padding: 24px 28px 26px;
   max-height: 90vh;
+  max-height: 90dvh;
+  overflow-y: auto;
+}
+
+/* Deal editor keeps Cancel / Save on screen. The open section scrolls;
+   on Activity the note archive is the part that gives up space. */
+#modalOverlay > .modal {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#dealForm {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+#dealForm > .modal-tabs,
+#dealForm > .modal-actions {
+  flex-shrink: 0;
+}
+
+#dealForm > .modal-panel {
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
 
@@ -3595,6 +3623,16 @@ body.is-card-dragging .card {
 }
 
 .modal-panel[hidden] {
+  display: none;
+}
+
+#modalPanelActivity {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+#modalPanelActivity[hidden] {
   display: none;
 }
 
@@ -3796,7 +3834,14 @@ body.is-card-dragging .card {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  min-height: 220px;
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow: hidden;
+}
+
+.activity-filters,
+.activity-composer {
+  flex-shrink: 0;
 }
 
 .activity-notes-only {
@@ -3830,8 +3875,10 @@ body.is-card-dragging .card {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  max-height: min(52vh, 440px);
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
+  overscroll-behavior: contain;
   scrollbar-width: thin;
   scrollbar-color: #d5d2c6 transparent;
 }
@@ -4019,6 +4066,7 @@ body.is-card-dragging .card {
 .activity-composer {
   display: flex;
   flex-direction: column;
+  flex-shrink: 0;
   gap: 10px;
   padding-top: 4px;
   border-top: 1px solid var(--line);
