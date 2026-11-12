@@ -6945,7 +6945,7 @@ function showTasksPipelineTooltip(bar, deal, task) {
 
   const dealRow = document.createElement("div");
   dealRow.className = "tasks-pipeline-tooltip-row";
-  dealRow.innerHTML = `<span class="tasks-pipeline-tooltip-label">Deal</span>`;
+  dealRow.innerHTML = `<span class="tasks-pipeline-tooltip-label">Company</span>`;
   const dealVal = document.createElement("span");
   dealVal.textContent = company;
   dealRow.appendChild(dealVal);

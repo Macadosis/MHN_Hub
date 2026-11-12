@@ -3155,6 +3155,12 @@ body.is-card-dragging .card {
   flex-shrink: 0;
 }
 
+.tasks-pipeline-tooltip-row > span:last-child {
+  flex: 1;
+  min-width: 0;
+  text-align: right;
+}
+
 .tasks-pipeline-empty {
   position: sticky;
   left: 0;
