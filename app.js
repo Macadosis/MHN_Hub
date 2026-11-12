@@ -161,7 +161,9 @@ const activityAttachmentsOnlyInput = document.getElementById("activityAttachment
 const newNoteInput = document.getElementById("newNoteInput");
 const noteAttachBtn = document.getElementById("noteAttachBtn");
 const noteWhenBtn = document.getElementById("noteWhenBtn");
-const noteWhenInput = document.getElementById("noteWhenInput");
+const noteWhenPopover = document.getElementById("noteWhenPopover");
+const noteWhenDate = document.getElementById("noteWhenDate");
+const noteWhenHour = document.getElementById("noteWhenHour");
 const noteWhenLabel = document.getElementById("noteWhenLabel");
 const noteWhenChip = document.getElementById("noteWhenChip");
 const noteWhenClearBtn = document.getElementById("noteWhenClearBtn");
@@ -1076,10 +1078,13 @@ function clearPendingNoteFiles() {
 }
 
 function noteWhenValue() {
-  const value = String(noteWhenInput?.value || "").trim();
-  if (!value) return null;
-  const parsed = new Date(value).getTime();
-  return Number.isFinite(parsed) ? parsed : null;
+  const date = String(noteWhenDate?.value || "").trim();
+  const hour = String(noteWhenHour?.value || "").trim();
+  if (!date || hour === "") return null;
+  const [year, month, day] = date.split("-").map(Number);
+  if (!year || !month || !day) return null;
+  const stamp = new Date(year, month - 1, day, Number(hour), 0, 0, 0).getTime();
+  return Number.isFinite(stamp) ? stamp : null;
 }
 
 function syncNoteWhen() {
@@ -1100,7 +1105,45 @@ function syncNoteWhen() {
 }
 
 function clearNoteWhen() {
-  if (noteWhenInput) noteWhenInput.value = "";
+  if (noteWhenDate) noteWhenDate.value = "";
+  if (noteWhenHour) noteWhenHour.value = "";
+  closeNoteWhenPopover();
+  syncNoteWhen();
+}
+
+function placeNoteWhenPopover() {
+  if (!noteWhenBtn || !noteWhenPopover) return;
+  const rect = noteWhenBtn.getBoundingClientRect();
+  const width = noteWhenPopover.offsetWidth || 168;
+  const left = Math.max(8, Math.min(rect.left, window.innerWidth - width - 8));
+  noteWhenPopover.style.top = `${Math.round(rect.bottom + 6)}px`;
+  noteWhenPopover.style.left = `${Math.round(left)}px`;
+}
+
+function closeNoteWhenPopover() {
+  if (!noteWhenPopover || noteWhenPopover.hidden) return;
+  noteWhenPopover.hidden = true;
+  noteWhenBtn?.setAttribute("aria-expanded", "false");
+}
+
+function openNoteWhenPopover() {
+  if (!noteWhenPopover || modalReadOnly || noteFileUploadBusy) return;
+  noteWhenPopover.hidden = false;
+  noteWhenBtn?.setAttribute("aria-expanded", "true");
+  placeNoteWhenPopover();
+  noteWhenDate?.focus();
+}
+
+function toggleNoteWhenPopover() {
+  if (noteWhenPopover?.hidden === false) closeNoteWhenPopover();
+  else openNoteWhenPopover();
+}
+
+function onNoteWhenChange() {
+  if (noteWhenDate?.value && noteWhenHour && noteWhenHour.value === "") {
+    noteWhenHour.value = String(new Date().getHours());
+  }
+  if (!noteWhenDate?.value && noteWhenHour) noteWhenHour.value = "";
   syncNoteWhen();
 }
 
@@ -5010,8 +5053,9 @@ function formatNoteTimestamp(timestamp) {
     month: "short",
     day: "numeric",
     year: "numeric",
-    hour: "numeric",
+    hour: "2-digit",
     minute: "2-digit",
+    hourCycle: "h23",
   });
 }
 
@@ -8014,19 +8058,34 @@ noteAttachBtn?.addEventListener("click", () => {
   if (modalReadOnly || noteFileUploadBusy) return;
   noteFileInput?.click();
 });
-noteWhenBtn?.addEventListener("click", () => {
-  if (modalReadOnly || noteFileUploadBusy || !noteWhenInput) return;
-  noteWhenInput.focus();
-  try {
-    if (typeof noteWhenInput.showPicker === "function") noteWhenInput.showPicker();
-    else noteWhenInput.click();
-  } catch {
-    noteWhenInput.click();
+if (noteWhenHour && !noteWhenHour.options.length) {
+  const empty = document.createElement("option");
+  empty.value = "";
+  empty.textContent = "Hour";
+  noteWhenHour.append(empty);
+  for (let hour = 0; hour < 24; hour += 1) {
+    const option = document.createElement("option");
+    option.value = String(hour);
+    option.textContent = String(hour).padStart(2, "0");
+    noteWhenHour.append(option);
   }
+}
+noteWhenBtn?.addEventListener("click", (event) => {
+  event.stopPropagation();
+  if (modalReadOnly || noteFileUploadBusy) return;
+  toggleNoteWhenPopover();
 });
-noteWhenInput?.addEventListener("change", syncNoteWhen);
+noteWhenPopover?.addEventListener("click", (event) => event.stopPropagation());
+noteWhenDate?.addEventListener("change", onNoteWhenChange);
+noteWhenHour?.addEventListener("change", onNoteWhenChange);
 noteWhenClearBtn?.addEventListener("click", () => {
   clearNoteWhen();
+});
+document.addEventListener("click", () => {
+  if (noteWhenPopover && !noteWhenPopover.hidden) closeNoteWhenPopover();
+});
+document.querySelector("#modalOverlay .modal")?.addEventListener("scroll", () => {
+  closeNoteWhenPopover();
 });
 noteFileInput?.addEventListener("change", () => {
   const files = noteFileInput.files;
@@ -8151,6 +8210,10 @@ document.getElementById("modalCloseBtn").addEventListener("click", closeModal);
 document.getElementById("cancelBtn").addEventListener("click", closeModal);
 document.addEventListener("keydown", (e) => {
   if (e.key !== "Escape") return;
+  if (noteWhenPopover && !noteWhenPopover.hidden) {
+    closeNoteWhenPopover();
+    return;
+  }
   if (!knowledgeDeleteOverlay.hidden) closeKnowledgeDeleteModal();
   else if (deleteNoteOverlay && !deleteNoteOverlay.hidden) closeDeleteNoteModal();
   else if (!pendingDraftOverlay.hidden) closePendingDraftModal();

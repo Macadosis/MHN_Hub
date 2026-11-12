@@ -4034,21 +4034,21 @@ body.is-card-dragging .card {
 
 .note-compose-tools {
   position: absolute;
-  left: 8px;
-  bottom: 8px;
+  left: 10px;
+  bottom: 10px;
   z-index: 2;
   display: flex;
   align-items: center;
   gap: 6px;
-  max-width: calc(100% - 36px);
+  max-width: calc(100% - 40px);
   min-width: 0;
 }
 
 .note-attach-btn {
   position: relative;
   z-index: 2;
-  width: 28px;
-  height: 28px;
+  width: 22px;
+  height: 22px;
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
@@ -4092,7 +4092,7 @@ body.is-card-dragging .card {
   gap: 2px;
   min-width: 0;
   max-width: 100%;
-  height: 28px;
+  height: 22px;
   padding: 0 4px 0 10px;
   border: 1px solid var(--line);
   border-radius: 999px;
@@ -4136,12 +4136,52 @@ body.is-card-dragging .card {
   background: var(--bg-sunken);
 }
 
-.note-when-input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  opacity: 0;
-  pointer-events: none;
+.note-when-popover {
+  position: fixed;
+  z-index: 80;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  width: 168px;
+  padding: 10px;
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-lift);
+}
+
+.note-when-popover[hidden] {
+  display: none;
+}
+
+.note-when-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.note-when-field input,
+.note-when-field select {
+  width: 100%;
+  height: 32px;
+  margin: 0;
+  padding: 0 8px;
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  outline: none;
+}
+
+.note-when-field input:focus,
+.note-when-field select:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .note-pending-files,
