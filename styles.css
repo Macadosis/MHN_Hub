@@ -4962,6 +4962,18 @@ button.note-file-main:focus-visible {
   background: var(--chip-contract-bg);
 }
 
+.field-file-btn .field-file-icon-attached {
+  display: none;
+}
+
+.field-file-btn.is-attached .field-file-icon-empty {
+  display: none;
+}
+
+.field-file-btn.is-attached .field-file-icon-attached {
+  display: block;
+}
+
 .field-file-btn:disabled {
   opacity: 0.45;
   cursor: default;
