@@ -812,16 +812,22 @@ async function uploadContractFile(dealId, file) {
   return { path, fileName };
 }
 
+function contractFileOpensInline(path, fileName = "") {
+  return /\.pdf($|[?#])/i.test(`${fileName} ${path}`);
+}
+
 async function getContractFilePreviewUrl(path, fileName = "") {
   if (!db || !path) return null;
   const downloadName = String(fileName || "").trim();
+  // A download name sets Content-Disposition: attachment, which closes the tab.
+  // PDFs are left inline so the browser can show them. Word files still download.
+  const options =
+    downloadName && !contractFileOpensInline(path, downloadName)
+      ? { download: downloadName }
+      : undefined;
   const { data, error } = await db.storage
     .from(CONTRACTS_BUCKET)
-    .createSignedUrl(
-      path,
-      CONTRACT_SIGNED_URL_SECONDS,
-      downloadName ? { download: downloadName } : undefined
-    );
+    .createSignedUrl(path, CONTRACT_SIGNED_URL_SECONDS, options);
   if (error) throw error;
   return data?.signedUrl || null;
 }

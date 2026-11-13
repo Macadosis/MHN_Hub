@@ -4854,18 +4854,32 @@ async function openContractPreview({ pendingFile = null, path = "", fileName = "
     setTimeout(() => URL.revokeObjectURL(url), 60_000);
     return;
   }
+
+  // Open during the click so the browser keeps the tab after the signed URL is fetched.
+  const previewTab = path ? window.open("", "_blank") : null;
+
+  const showInTab = (url) => {
+    if (previewTab && !previewTab.closed) {
+      previewTab.location.href = url;
+      return;
+    }
+    window.open(url, "_blank", "noopener,noreferrer");
+  };
+
   if (!path) return;
   const api = window.MHN_DB;
   const title = noun.charAt(0).toUpperCase() + noun.slice(1);
   if (!api?.getContractFilePreviewUrl) {
+    previewTab?.close();
     showSyncStatus(`${title} preview unavailable offline`, true, true);
     return;
   }
   try {
     const url = await api.getContractFilePreviewUrl(path, fileName);
     if (!url) throw new Error("No preview URL");
-    window.open(url, "_blank", "noopener,noreferrer");
+    showInTab(url);
   } catch (err) {
+    previewTab?.close();
     console.error(err);
     showSyncStatus(
       `Could not open ${noun}${fileName ? ` “${fileName}”` : ""}${syncErrorDetail(err)}`,
