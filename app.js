@@ -67,8 +67,6 @@ const PIPELINE_SCROLL_MAX_FUTURE_MONTHS = 36;
 /** Skip month names/revenue when only a leftover sliver is on-screen. */
 const PIPELINE_MIN_MONTH_LABEL_DAYS = 10;
 const TASKS_PIPELINE_COMPANY_TONES = ["sage", "lavender", "sky", "sand", "peach", "rose"];
-/** Width of the date section on the left (or right, when overdue) of a task bubble. */
-const TASKS_PIPELINE_OFFSET_RESERVE_PX = 30;
 const TASK_TYPES = [
   { id: "email", label: "Email" },
   { id: "call", label: "Call" },
@@ -6732,14 +6730,8 @@ function formatTaskWeekday(dueAt) {
   return new Date(dueAt).toLocaleDateString("en-US", { weekday: "short" });
 }
 
-function taskDayOffsetSide(dueAt) {
-  const days = getTaskDayOffset(dueAt);
-  return days > 0 ? "after" : "before";
-}
-
-function taskPipelineOffsetReserveMs(dueAt, span, rowWidthPx) {
-  if (!taskDayOffsetSide(dueAt)) return 0;
-  return (TASKS_PIPELINE_OFFSET_RESERVE_PX / Math.max(rowWidthPx, 1)) * span;
+function taskPipelineDayStart(dueAt) {
+  return startOfDay(new Date(dueAt)).getTime();
 }
 
 function taskPipelineCompanyKey(entry) {
@@ -6795,8 +6787,7 @@ function estimateTaskBarWidthMs(entry, span, rowWidthPx) {
     truncateTaskPipelineLabel(entry.task.text).length,
     taskPipelineCompanyLabel(entry.deal).length
   );
-  // Rough match to CSS: chars + bar padding, against the visible rows width.
-  // Day-offset sits outside the bubble and does not affect bar width.
+  // Rough match to CSS: chars + date-cap + bar padding, against the visible rows width.
   const approxPx = labelLen * 8.5 + 44;
   const widthMs = (approxPx / Math.max(rowWidthPx, 1)) * span;
   const gapMs = (8 / Math.max(rowWidthPx, 1)) * span; // small breathing room
@@ -6804,27 +6795,18 @@ function estimateTaskBarWidthMs(entry, span, rowWidthPx) {
 }
 
 function measureTaskPipelineEntryInterval(entry, span, rowWidthPx) {
-  const due = entry.task.dueAt;
+  const due = taskPipelineDayStart(entry.task.dueAt);
   const barEnd = due + estimateTaskBarWidthMs(entry, span, rowWidthPx);
-  const reserve = taskPipelineOffsetReserveMs(due, span, rowWidthPx);
-  const side = taskDayOffsetSide(due);
-  return {
-    start: side === "before" ? due - reserve : due,
-    end: side === "after" ? barEnd + reserve : barEnd,
-  };
+  return { start: due, end: barEnd };
 }
 
 function measureTaskPipelineItemInterval(item, rowWidthPx) {
   const leftPct = parseFloat(item.style.left) || 0;
   const leftPx = (leftPct / 100) * rowWidthPx;
   const widthPx = Math.max(item.offsetWidth, 1);
-  const bar = item.querySelector(".tasks-pipeline-bar");
-  const meta = item.querySelector(".tasks-pipeline-bar-meta");
-  const hang =
-    bar && bar.classList.contains("has-meta-start") && meta ? meta.offsetWidth : 0;
   return {
-    start: leftPx - hang,
-    end: leftPx - hang + widthPx + 8,
+    start: leftPx,
+    end: leftPx + widthPx + 8,
   };
 }
 
@@ -6875,7 +6857,7 @@ function assignTaskPipelineRows(entries, span, rowWidthPx = 720) {
   const rowCount = packIntervalsInOrder(members);
   for (const member of members) {
     member.item._pipelineRow = member.relRow;
-    member.item._pipelineStart = member.item.task.dueAt;
+    member.item._pipelineStart = taskPipelineDayStart(member.item.task.dueAt);
     member.item._pipelineEnd = member.end;
   }
   return rowCount;

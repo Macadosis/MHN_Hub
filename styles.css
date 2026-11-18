@@ -2966,6 +2966,7 @@ body.is-card-dragging .card {
   display: inline-flex;
   align-items: stretch;
   height: 27px;
+  margin: 0;
   padding: 0;
   background: var(--tasks-pipe-soft);
   border: 1px solid var(--tasks-pipe);
@@ -2982,10 +2983,6 @@ body.is-card-dragging .card {
   box-shadow: var(--shadow-card);
   transition: box-shadow 0.15s ease, transform 0.15s ease, opacity 0.15s ease;
   z-index: 3;
-}
-
-.tasks-pipeline-bar.has-meta-start {
-  margin-left: -30px;
 }
 
 .tasks-pipeline-bar.has-meta-end .tasks-pipeline-bar-meta {
