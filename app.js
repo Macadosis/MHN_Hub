@@ -130,7 +130,9 @@ const pendingDraftLead = document.getElementById("pendingDraftLead");
 const pendingDraftConfirmBtn = document.getElementById("pendingDraftConfirmBtn");
 let pendingDraftKind = null; // "note" | "task"
 const deleteNoteOverlay = document.getElementById("deleteNoteOverlay");
+const deleteTaskOverlay = document.getElementById("deleteTaskOverlay");
 let pendingDeleteNoteId = null;
+let pendingDeleteTaskId = null;
 
 const commitOverlay = document.getElementById("commitOverlay");
 const commitForm = document.getElementById("commitForm");
@@ -2010,8 +2012,63 @@ function closeFieldSuggestions(fieldKey) {
   if (!state) return;
   state.listEl.hidden = true;
   state.listEl.innerHTML = "";
+  state.listEl.classList.remove("is-floating");
+  state.listEl.style.left = "";
+  state.listEl.style.top = "";
+  state.listEl.style.width = "";
+  state.listEl.style.maxHeight = "";
+  if (state.home && state.listEl.parentElement !== state.home) {
+    state.home.appendChild(state.listEl);
+  }
   state.activeIndex = -1;
   state.input.setAttribute("aria-expanded", "false");
+}
+
+function fieldInputIsVisible(input) {
+  const panel = input.closest(".modal-panel");
+  if (!panel) return true;
+  const inputRect = input.getBoundingClientRect();
+  const panelRect = panel.getBoundingClientRect();
+  return inputRect.bottom > panelRect.top + 4 && inputRect.top < panelRect.bottom - 4;
+}
+
+function placeFieldSuggestions(fieldKey) {
+  const state = fieldSuggestionState.get(fieldKey);
+  if (!state || state.listEl.hidden) return;
+  if (state.listEl.parentElement !== document.body) {
+    document.body.appendChild(state.listEl);
+  }
+  const list = state.listEl;
+  const inputRect = state.input.getBoundingClientRect();
+  list.classList.add("is-floating");
+  list.style.left = `${Math.round(inputRect.left)}px`;
+  list.style.width = `${Math.round(inputRect.width)}px`;
+  list.style.maxHeight = "";
+  const gap = 4;
+  const margin = 8;
+  const desired = list.scrollHeight;
+  const spaceBelow = window.innerHeight - inputRect.bottom - gap - margin;
+  const spaceAbove = inputRect.top - gap - margin;
+  const openUp = spaceBelow < desired && spaceAbove > spaceBelow;
+  const space = Math.max(openUp ? spaceAbove : spaceBelow, 34);
+  list.style.maxHeight = `${Math.round(Math.min(desired, space))}px`;
+  const height = list.offsetHeight;
+  const top = openUp ? inputRect.top - gap - height : inputRect.bottom + gap;
+  list.style.top = `${Math.round(Math.max(margin, top))}px`;
+}
+
+function repositionOpenFieldSuggestions(event) {
+  const target = event?.target;
+  if (target?.classList?.contains("combobox-suggestions")) return;
+  for (const fieldKey of fieldSuggestionState.keys()) {
+    const state = fieldSuggestionState.get(fieldKey);
+    if (!state || state.listEl.hidden) continue;
+    if (!fieldInputIsVisible(state.input)) {
+      closeFieldSuggestions(fieldKey);
+      continue;
+    }
+    placeFieldSuggestions(fieldKey);
+  }
 }
 
 function closeAllFieldSuggestions() {
@@ -2079,6 +2136,7 @@ function renderFieldSuggestions(fieldKey) {
 
   state.listEl.hidden = false;
   state.input.setAttribute("aria-expanded", "true");
+  placeFieldSuggestions(fieldKey);
 }
 
 function setupFieldSuggestions(fieldKey, { trackDismissed = false, trackPaused = false } = {}) {
@@ -2089,6 +2147,7 @@ function setupFieldSuggestions(fieldKey, { trackDismissed = false, trackPaused =
   fieldSuggestionState.set(fieldKey, {
     input,
     listEl,
+    home: listEl.parentElement,
     activeIndex: -1,
     trackDismissed,
     trackPaused,
@@ -2126,6 +2185,8 @@ setupFieldSuggestions("company", { trackDismissed: true, trackPaused: true });
 setupFieldSuggestions("industry");
 setupFieldSuggestions("tool");
 setupFieldSuggestions("owner");
+document.addEventListener("scroll", repositionOpenFieldSuggestions, true);
+window.addEventListener("resize", repositionOpenFieldSuggestions);
 
 function matchesFilters(deal) {
   return FILTER_FIELDS.every(({ key }) => {
@@ -6123,12 +6184,76 @@ function renderDealTasks() {
     });
 
     fields.append(nameInput, dueRow, meta);
-    top.append(completeBtn, fields);
+    const rail = document.createElement("div");
+    rail.className = "deal-task-rail";
+    rail.append(completeBtn);
+    if (!modalReadOnly) rail.append(createDealTaskDelete(task));
+    top.append(rail, fields);
     card.append(top);
     const typeMark = createTaskTypeMark(task.type);
     if (typeMark) card.append(typeMark);
     dealTasksListEl.appendChild(card);
   }
+}
+
+function createDealTaskDelete(task) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "deal-task-delete";
+  button.setAttribute("aria-label", "Delete task");
+  button.title = "Delete task";
+  const icon = createSvgEl("svg", {
+    width: "16.8",
+    height: "16.8",
+    viewBox: "0 0 16 16",
+    fill: "none",
+    "aria-hidden": "true",
+  });
+  const stroke = {
+    fill: "none",
+    stroke: "currentColor",
+    "stroke-width": "1",
+    "stroke-linecap": "round",
+    "stroke-linejoin": "round",
+  };
+  icon.append(
+    createSvgEl("path", { ...stroke, d: "M3.2 4.4h9.6" }),
+    createSvgEl("path", { ...stroke, d: "M6.4 4.4V3.3a.7.7 0 0 1 .7-.7h1.8a.7.7 0 0 1 .7.7v1.1" }),
+    createSvgEl("path", { ...stroke, d: "M4.4 4.4l.55 8.1a.9.9 0 0 0 .9.8h4.3a.9.9 0 0 0 .9-.8l.55-8.1" }),
+    createSvgEl("path", { ...stroke, d: "M6.7 7v3.4M9.3 7v3.4" })
+  );
+  button.appendChild(icon);
+  button.addEventListener("click", () => openDeleteTaskModal(task.id));
+  return button;
+}
+
+function openDeleteTaskModal(taskId) {
+  if (modalReadOnly || !taskId || !deleteTaskOverlay) return;
+  const task = modalTasks.find((item) => item.id === taskId);
+  if (!task) return;
+  pendingDeleteTaskId = taskId;
+  const lead = document.getElementById("deleteTaskLead");
+  const name = (task.text || "").trim();
+  if (lead) {
+    lead.textContent = name
+      ? `Are you sure you want to delete “${name}”?`
+      : "Are you sure you want to delete this task?";
+  }
+  deleteTaskOverlay.hidden = false;
+}
+
+function closeDeleteTaskModal() {
+  if (!deleteTaskOverlay) return;
+  deleteTaskOverlay.hidden = true;
+  pendingDeleteTaskId = null;
+}
+
+function confirmDeleteTask() {
+  const id = pendingDeleteTaskId;
+  if (!id) return;
+  modalTasks = modalTasks.filter((task) => task.id !== id);
+  closeDeleteTaskModal();
+  renderDealTasks();
 }
 
 function addDealTask() {
@@ -7489,6 +7614,7 @@ function closeModal() {
   closeAllFieldSuggestions();
   closePendingDraftModal();
   closeDeleteNoteModal();
+  closeDeleteTaskModal();
   overlay.hidden = true;
   editingId = null;
   draftDealId = null;
@@ -8190,6 +8316,13 @@ pauseOverlay.addEventListener("click", (e) => {
   if (e.target === pauseOverlay) closePauseModal();
 });
 
+document.getElementById("deleteTaskConfirmBtn").addEventListener("click", confirmDeleteTask);
+document.getElementById("deleteTaskCancelBtn").addEventListener("click", closeDeleteTaskModal);
+document.getElementById("deleteTaskCloseBtn").addEventListener("click", closeDeleteTaskModal);
+deleteTaskOverlay?.addEventListener("click", (e) => {
+  if (e.target === deleteTaskOverlay) closeDeleteTaskModal();
+});
+
 document.getElementById("deleteNoteConfirmBtn").addEventListener("click", confirmDeleteNote);
 document.getElementById("deleteNoteCancelBtn").addEventListener("click", closeDeleteNoteModal);
 document.getElementById("deleteNoteCloseBtn").addEventListener("click", closeDeleteNoteModal);
@@ -8214,6 +8347,7 @@ document.addEventListener("keydown", (e) => {
     return;
   }
   if (!knowledgeDeleteOverlay.hidden) closeKnowledgeDeleteModal();
+  else if (deleteTaskOverlay && !deleteTaskOverlay.hidden) closeDeleteTaskModal();
   else if (deleteNoteOverlay && !deleteNoteOverlay.hidden) closeDeleteNoteModal();
   else if (!pendingDraftOverlay.hidden) closePendingDraftModal();
   else if (!pauseOverlay.hidden) closePauseModal();
